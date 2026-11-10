@@ -87,6 +87,29 @@ button, a {
   padding: 12px 16px;
 }
 
+.map {
+  margin: 0 0 12px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.map img {
+  display: block;
+  width: 100%;
+  height: 28vh;
+  max-height: 240px;
+  object-fit: cover;
+}
+
+.map figcaption {
+  margin: 0;
+  padding: 6px 12px 8px;
+  color: var(--sage);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
 .choice-stack {
   background: var(--blush);
   border-radius: 28px;

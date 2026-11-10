@@ -4,10 +4,6 @@
    which horizon it touches. Nothing here is an alarm or a correction.
    The end of the run is a report she can reopen whenever she wants. */
 
-const MAPS = "https://www.google.com/maps/dir/?api=1&destination="
-  + encodeURIComponent("Medical clinic")
-  + "&travelmode=driving";
-
 const PROMPT_KEY = "report-prompts";
 
 /* A reading shows up only while the choice it belongs to is on screen. */
@@ -101,7 +97,15 @@ function scene() {
       return {
         text: "Time to drive to your appointment.",
         choices: [
-          { label: "Directions", go: "afterAppt", maps: MAPS, context: CLINIC, note: { today: "Getting there is this hour." } }
+          { label: "Directions", go: "route", context: CLINIC, note: { today: "Getting there is this hour." } }
+        ]
+      };
+    case "route":
+      return {
+        text: "This way.",
+        map: true,
+        choices: [
+          { label: "Head in", go: "afterAppt" }
         ]
       };
     case "afterAppt":
@@ -256,6 +260,10 @@ function couple(lines) {
   return [lines[0], lines[lines.length - 1]];
 }
 
+function mapHtml() {
+  return `<figure class="map"><img src="map.png" alt="Map to the clinic"><figcaption>© OpenStreetMap</figcaption></figure>`;
+}
+
 function readingsHtml(lines) {
   if (!lines.length) return "";
   return `<div class="readings">${lines.map((item) => `<p class="source"><span class="horizon">${escapeHtml(item.who)}</span> ${escapeHtml(item.text)}</p>`).join("")}</div>`;
@@ -277,7 +285,7 @@ function render() {
       <h1 class="step">${escapeHtml(current.text)}</h1>
       ${current.report ? "" : noteHtml()}
     </section>
-    <div class="choices"><div class="choice-stack">${choices}</div></div>
+    <div class="choices">${current.map ? mapHtml() : ""}<div class="choice-stack">${choices}</div></div>
     <div class="context">${bottom}</div>
   `;
 }
@@ -334,7 +342,6 @@ app.addEventListener("click", (event) => {
     render();
     return;
   }
-  if (choice.maps) window.open(choice.maps, "_blank", "noopener");
   enter(choice.go, choice.set, choice.reset, choice.note);
   speak(scene().text);
 });
