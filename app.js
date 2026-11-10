@@ -10,6 +10,17 @@ const MAPS = "https://www.google.com/maps/dir/?api=1&destination="
 
 const PROMPT_KEY = "report-prompts";
 
+/* A reading shows up only while the choice it belongs to is on screen. */
+const OURA = { who: "Oura", text: "Only 6 hours of sleep." };
+const STORIES = { who: "Instagram", text: "A few new stories." };
+const CYCLE = { who: "Cycle", text: "Day 21, luteal." };
+const CLINIC = { who: "Google Calendar", text: "Clinic at 10:30." };
+const LUNCH = { who: "Google Calendar", text: "Lunch with Caitie at 12:30." };
+const WEATHER = { who: "Weather", text: "48° and clear." };
+const GARMIN = { who: "Garmin", text: "An easy walk yesterday." };
+const MOON = { who: "Astrology", text: "The moon is in Cancer." };
+const UNREAD = { who: "Messages", text: "4 unread messages." };
+
 const fresh = () => ({
   slept: false,
   social: false,
@@ -42,16 +53,16 @@ function scene() {
       return {
         text: "Good morning.",
         choices: [
-          { label: "Sleep", go: "afterSleep", set: { slept: true }, note: { today: "Rest for this morning.", week: "A softer start leaves more of you for the week." } },
-          { label: "Socialize digitally", go: "afterSocial", set: { social: true }, note: { today: "A little contact today.", week: "Small contact is how this week stays connected." } },
-          { label: "Eat", go: "ready", set: { ate: true }, note: { today: "Breakfast is steadiness for today.", month: "Even mornings are the month you're building." } }
+          { label: "Sleep", go: "afterSleep", set: { slept: true }, context: OURA, note: { today: "Rest for this morning.", week: "A softer start leaves more of you for the week." } },
+          { label: "Socialize digitally", go: "afterSocial", set: { social: true }, context: STORIES, note: { today: "A little contact today.", week: "Small contact is how this week stays connected." } },
+          { label: "Eat", go: "ready", set: { ate: true }, context: CYCLE, note: { today: "Breakfast is steadiness for today.", month: "Even mornings are the month you're building." } }
         ]
       };
     case "afterSleep":
       return {
         text: "A little more time in bed.",
         choices: [
-          { label: "Eat", go: "ready", set: { ate: true }, note: { today: "Food before the day gets going.", month: "Breakfast is the even month, one morning at a time." } },
+          { label: "Eat", go: "ready", set: { ate: true }, context: CYCLE, note: { today: "Food before the day gets going.", month: "Breakfast is the even month, one morning at a time." } },
           { label: "Have a shower", go: "hungry", set: { showered: true }, note: { today: "Getting ready, at your pace." } }
         ]
       };
@@ -59,7 +70,7 @@ function scene() {
       return {
         text: "Whenever you're ready.",
         choices: [
-          { label: "Eat", go: "ready", set: { ate: true }, note: { today: "Food before the day gets going.", month: "Breakfast is the even month, one morning at a time." } },
+          { label: "Eat", go: "ready", set: { ate: true }, context: CYCLE, note: { today: "Food before the day gets going.", month: "Breakfast is the even month, one morning at a time." } },
           { label: "Have a shower", go: "hungry", set: { showered: true }, note: { today: "Getting ready, at your pace." } }
         ]
       };
@@ -67,8 +78,8 @@ function scene() {
       return {
         text: "Breakfast, here or with you.",
         choices: [
-          { label: "Eat here", go: "ready", set: { ate: true }, note: { today: "Breakfast before you head out.", month: "Mornings with food in them are the longer pattern." } },
-          { label: "Take breakfast with you", go: "ready", set: { ate: true }, note: { today: "Breakfast comes along.", month: "Mornings with food in them are the longer pattern." } }
+          { label: "Eat here", go: "ready", set: { ate: true }, context: CYCLE, note: { today: "Breakfast before you head out.", month: "Mornings with food in them are the longer pattern." } },
+          { label: "Take breakfast with you", go: "ready", set: { ate: true }, context: CLINIC, note: { today: "Breakfast comes along.", month: "Mornings with food in them are the longer pattern." } }
         ]
       };
     case "ready":
@@ -76,38 +87,38 @@ function scene() {
         text: "Get ready.",
         choices: [
           { label: "Have a shower", go: "pack", set: { showered: true }, note: { today: "A shower, then the rest of the morning." } },
-          { label: "Get dressed", go: "pack", set: { dressed: true }, note: { today: "Dressed, and the morning can move." } }
+          { label: "Get dressed", go: "pack", set: { dressed: true }, context: WEATHER, note: { today: "Dressed, and the morning can move." } }
         ]
       };
     case "pack":
       return {
         text: "A snack for later, if you want it along.",
         choices: [
-          { label: "Put a protein bar in your bag", go: "drive", set: { snack: "protein" }, note: { today: "Food for the gap before lunch.", month: "Having something with you is how the month stays even." } },
-          { label: "Pack some apple slices", go: "drive", set: { snack: "apple" }, note: { today: "Fruit for the gap before lunch.", month: "Having something with you is how the month stays even." } }
+          { label: "Put a protein bar in your bag", go: "drive", set: { snack: "protein" }, context: LUNCH, note: { today: "Food for the gap before lunch.", month: "Having something with you is how the month stays even." } },
+          { label: "Pack some apple slices", go: "drive", set: { snack: "apple" }, context: LUNCH, note: { today: "Fruit for the gap before lunch.", month: "Having something with you is how the month stays even." } }
         ]
       };
     case "drive":
       return {
         text: "Time to drive to your appointment.",
         choices: [
-          { label: "Directions", go: "afterAppt", maps: MAPS, note: { today: "Getting there is this hour." } }
+          { label: "Directions", go: "afterAppt", maps: MAPS, context: CLINIC, note: { today: "Getting there is this hour." } }
         ]
       };
     case "afterAppt":
       return {
         text: "A little time before lunch.",
         choices: [
-          { label: "Eat your snack", go: "afterSnack", set: { ateSnack: true }, note: { today: "Food in the gap before lunch.", month: "This is the steady month, one gap at a time." } },
-          { label: "Walk around the block", go: "afterWalk", set: { walked: true }, note: { today: "Movement in this hour.", week: "One easy walk can be the week.", beyond: "Short walks are how a body stays in a longer life." } },
-          { label: "Visit a second hand shop nearby", go: "afterShop", set: { shopped: true }, note: { today: "Something pleasing in this hour.", week: "Pleasure is in the week on purpose." } }
+          { label: "Eat your snack", go: "afterSnack", set: { ateSnack: true }, context: LUNCH, note: { today: "Food in the gap before lunch.", month: "This is the steady month, one gap at a time." } },
+          { label: "Walk around the block", go: "afterWalk", set: { walked: true }, context: GARMIN, note: { today: "Movement in this hour.", week: "One easy walk can be the week.", beyond: "Short walks are how a body stays in a longer life." } },
+          { label: "Visit a second hand shop nearby", go: "afterShop", set: { shopped: true }, context: MOON, note: { today: "Something pleasing in this hour.", week: "Pleasure is in the week on purpose." } }
         ]
       };
     case "afterSnack":
       return {
         text: "The snack is done.",
         choices: followUps([
-          { label: "Get a croissant", go: "landed", set: { pleasure: true }, note: { today: "Pleasure today, beside the food you already had.", month: "Care and pleasure together are the balance." } }
+          { label: "Get a croissant", go: "landed", set: { pleasure: true }, context: MOON, note: { today: "Pleasure today, beside the food you already had.", month: "Care and pleasure together are the balance." } }
         ])
       };
     case "afterWalk":
@@ -137,16 +148,16 @@ function followUps(extra) {
   const choices = extra.slice();
   const has = (label) => choices.some((choice) => choice.label === label);
   if (!state.ateSnack && !has("Eat your snack")) {
-    choices.push({ label: "Eat your snack", go: "afterSnack", set: { ateSnack: true }, note: { today: "Food in the gap before lunch.", month: "This is the steady month, one gap at a time." } });
+    choices.push({ label: "Eat your snack", go: "afterSnack", set: { ateSnack: true }, context: LUNCH, note: { today: "Food in the gap before lunch.", month: "This is the steady month, one gap at a time." } });
   }
   if (!state.walked && node !== "afterWalk" && !has("Walk around the block")) {
-    choices.push({ label: "Walk around the block", go: "afterWalk", set: { walked: true }, note: { today: "Movement in this hour.", week: "One easy walk can be the week.", beyond: "Short walks are how a body stays in a longer life." } });
+    choices.push({ label: "Walk around the block", go: "afterWalk", set: { walked: true }, context: GARMIN, note: { today: "Movement in this hour.", week: "One easy walk can be the week.", beyond: "Short walks are how a body stays in a longer life." } });
   }
   if (!state.pleasure && state.ate && state.snack && !has("Get a croissant")) {
-    choices.push({ label: "Get a croissant", go: "landed", set: { pleasure: true }, note: { today: "Pleasure today, beside the food you already had.", month: "Care and pleasure together are the balance." } });
+    choices.push({ label: "Get a croissant", go: "landed", set: { pleasure: true }, context: MOON, note: { today: "Pleasure today, beside the food you already had.", month: "Care and pleasure together are the balance." } });
   }
   if (!state.texted && !has("Text a friend")) {
-    choices.push({ label: "Text a friend", go: "landed", set: { texted: true }, note: { today: "A friend, today.", week: "Closeness in this week.", beyond: "People stay close in small notes." } });
+    choices.push({ label: "Text a friend", go: "landed", set: { texted: true }, context: UNREAD, note: { today: "A friend, today.", week: "Closeness in this week.", beyond: "People stay close in small notes." } });
   }
   if (!choices.length) choices.push({ label: "That's the morning", go: "landed" });
   return choices.slice(0, 4);
@@ -223,6 +234,34 @@ function noteHtml() {
   return `<div class="note">${bits.map(([horizon, text]) => `<p><span class="horizon">${horizon}</span> ${escapeHtml(text)}</p>`).join("")}</div>`;
 }
 
+function contextsFor(choices) {
+  const seen = new Set();
+  const lines = [];
+  choices.forEach((choice) => {
+    const item = [].concat(choice.context || [])[0];
+    if (!item) return;
+    const key = item.who + "\n" + item.text;
+    if (seen.has(key)) return;
+    seen.add(key);
+    lines.push(item);
+  });
+  if (lines.length <= 2) return lines;
+  const unread = lines.find((item) => item === UNREAD);
+  const rest = lines.filter((item) => item !== unread);
+  const kept = new Set(unread ? [rest[0], unread] : rest.slice(0, 2));
+  return lines.filter((item) => kept.has(item));
+}
+
+function couple(lines) {
+  if (lines.length <= 2) return lines;
+  return [lines[0], lines[lines.length - 1]];
+}
+
+function readingsHtml(lines) {
+  if (!lines.length) return "";
+  return `<div class="readings">${lines.map((item) => `<p class="source"><span class="horizon">${escapeHtml(item.who)}</span> ${escapeHtml(item.text)}</p>`).join("")}</div>`;
+}
+
 function reportHtml(lines) {
   return `<div class="report">${lines.map((line) => `<p class="report-line"><span class="horizon">${escapeHtml(line.horizon)}</span> ${escapeHtml(line.text)}</p>`).join("")}<p class="prompt">${escapeHtml(promptLine())}</p></div>`;
 }
@@ -233,13 +272,14 @@ function render() {
     const selected = choice.prompts === true && promptsOn() || choice.prompts === false && !promptsOn();
     return `<button type="button" data-i="${i}" aria-pressed="${selected ? "true" : "false"}">${escapeHtml(choice.label)}</button>`;
   }).join("");
-  const context = current.report ? reportHtml(current.report) : noteHtml();
+  const bottom = current.report ? reportHtml(couple(current.report)) : readingsHtml(contextsFor(current.choices));
   app.innerHTML = `
     <section class="card" aria-live="polite">
       <h1 class="step">${escapeHtml(current.text)}</h1>
+      ${current.report ? "" : noteHtml()}
     </section>
     <div class="choices"><div class="choice-stack">${choices}</div></div>
-    <div class="context">${context}</div>
+    <div class="context">${bottom}</div>
   `;
 }
 

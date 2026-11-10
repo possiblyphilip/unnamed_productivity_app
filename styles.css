@@ -35,6 +35,10 @@ button, a {
   padding: calc(28px + env(safe-area-inset-top)) 28px 0;
 }
 
+.card .note {
+  margin-top: 18px;
+}
+
 .step {
   font-family: Georgia, "Iowan Old Style", Palatino, serif;
   font-weight: 500;
@@ -46,16 +50,19 @@ button, a {
 
 .context {
   padding: 8px 28px calc(18px + env(safe-area-inset-bottom));
-  max-height: 34vh;
-  overflow: auto;
 }
 
 .note p,
 .report-line,
-.prompt {
+.prompt,
+.source {
   margin: 0 0 14px;
   font-size: 1.05rem;
   line-height: 1.35;
+}
+
+.source {
+  margin-bottom: 10px;
 }
 
 .horizon {
