@@ -33,6 +33,42 @@ const fresh = () => ({
 let state = fresh();
 let node = "morning";
 let note = null;
+let screen = "morning";
+let menuOpen = false;
+const disconnected = new Set();
+
+const CHAT = [
+  ["her", "I want to be more free socially."],
+  ["guide", "I'll leave more of the day unplanned, so saying yes is easy."],
+  ["her", "Flirting, too. I want to find connections."],
+  ["guide", "It stays a choice. Socially free is on the longer plan now, for this month and past it."]
+];
+
+const GOALS = ["Socially free.", "Open afternoons.", "Flirting stays a choice."];
+
+const INTEGRATIONS = [
+  ["Schedule", [
+    ["gcal", "Google Calendar", "Clinic at 10:30. Lunch with Caitie at 12:30."],
+    ["outlook", "Outlook", "Connected. Nothing else this morning."]
+  ]],
+  ["Messages", [
+    ["messages", "Messages", "Connected."],
+    ["gmail", "Gmail", "Connected. Held for later."],
+    ["whatsapp", "WhatsApp", "Connected."]
+  ]],
+  ["Social", [
+    ["instagram", "Instagram", "A few new stories."]
+  ]],
+  ["Wellness", [
+    ["oura", "Oura", "Only 6 hours of sleep."],
+    ["garmin", "Garmin", "An easy walk yesterday."],
+    ["fitbit", "Fitbit", "Connected."],
+    ["whoop", "Whoop", "Connected."],
+    ["cycle", "Cycle", "Ovulatory phase."],
+    ["weather", "Weather", "48° and clear."],
+    ["sky", "Astrology", "The moon is in Cancer."]
+  ]]
+];
 let speechToken = 0;
 let heldUtterances = [];
 
@@ -273,14 +309,58 @@ function reportHtml(lines) {
   return `<div class="report">${lines.map((line) => `<p class="report-line"><span class="horizon">${escapeHtml(line.horizon)}</span> ${escapeHtml(line.text)}</p>`).join("")}<p class="prompt">${escapeHtml(promptLine())}</p></div>`;
 }
 
-function render() {
+function topbarHtml() {
+  return `<header class="topbar"><button type="button" class="hamburger" data-menu aria-label="Menu" aria-expanded="${menuOpen ? "true" : "false"}"><span></span><span></span><span></span></button></header>`;
+}
+
+function menuHtml() {
+  const item = (id, label) => `<button type="button" data-view="${id}"${screen === id ? " aria-current=\"true\"" : ""}>${label}</button>`;
+  return `
+    <button type="button" class="scrim" data-menu aria-label="Close menu"></button>
+    <nav class="menu" aria-label="Menu">
+      <p class="horizon">Menu</p>
+      ${item("morning", "This morning")}
+      ${item("plan", "Plan ahead")}
+      ${item("integrations", "Integrations")}
+    </nav>
+  `;
+}
+
+function planHtml() {
+  const bubbles = CHAT.map(([who, text]) => `<p class="bubble ${who}"><span class="who">${who === "her" ? "Her" : "Guide"}</span>${escapeHtml(text)}</p>`).join("");
+  const goals = GOALS.map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+  return `
+    <section class="card"><h1 class="step">Plan ahead.</h1></section>
+    <div class="thread">${bubbles}</div>
+    <div class="context">
+      <p class="source"><span class="horizon">Longer plan</span> Updated in the background.</p>
+      ${goals}
+    </div>
+  `;
+}
+
+function integrationsHtml() {
+  const groups = INTEGRATIONS.map(([group, items]) => {
+    const rows = items.map(([id, name, detail]) => {
+      const on = !disconnected.has(id);
+      return `<button type="button" class="integ" data-integration="${id}" aria-pressed="${on ? "true" : "false"}"><span class="integ-name">${escapeHtml(name)}</span><span class="integ-detail">${on ? escapeHtml(detail) : "Off"}</span></button>`;
+    }).join("");
+    return `<section class="integ-group"><h2 class="horizon">${escapeHtml(group)}</h2>${rows}</section>`;
+  }).join("");
+  return `
+    <section class="card"><h1 class="step">Integrations.</h1></section>
+    <div class="sheet">${groups}</div>
+  `;
+}
+
+function morningHtml() {
   const current = scene();
   const choices = current.choices.map((choice, i) => {
     const selected = choice.prompts === true && promptsOn() || choice.prompts === false && !promptsOn();
     return `<button type="button" data-i="${i}" aria-pressed="${selected ? "true" : "false"}">${escapeHtml(choice.label)}</button>`;
   }).join("");
   const bottom = current.report ? reportHtml(couple(current.report)) : readingsHtml(contextsFor(current.choices));
-  app.innerHTML = `
+  return `
     <section class="card" aria-live="polite">
       <h1 class="step">${escapeHtml(current.text)}</h1>
       ${current.report ? "" : noteHtml()}
@@ -288,6 +368,11 @@ function render() {
     <div class="choices">${current.map ? mapHtml() : ""}<div class="choice-stack">${choices}</div></div>
     <div class="context">${bottom}</div>
   `;
+}
+
+function render() {
+  const body = screen === "plan" ? planHtml() : screen === "integrations" ? integrationsHtml() : morningHtml();
+  app.innerHTML = `${topbarHtml()}${menuOpen ? menuHtml() : ""}${body}`;
 }
 
 function escapeHtml(value) {
@@ -333,6 +418,27 @@ function speak(text) {
 }
 
 app.addEventListener("click", (event) => {
+  const view = event.target.closest("[data-view]");
+  if (view) {
+    screen = view.dataset.view;
+    menuOpen = false;
+    render();
+    return;
+  }
+  const integration = event.target.closest("[data-integration]");
+  if (integration) {
+    const id = integration.dataset.integration;
+    if (disconnected.has(id)) disconnected.delete(id);
+    else disconnected.add(id);
+    render();
+    return;
+  }
+  if (event.target.closest("[data-menu]")) {
+    menuOpen = !menuOpen;
+    render();
+    return;
+  }
+  if (screen !== "morning") return;
   const el = event.target.closest("[data-i]");
   if (!el) return;
   const choice = scene().choices[Number(el.dataset.i)];
