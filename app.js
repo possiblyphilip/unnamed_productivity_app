@@ -13,13 +13,12 @@ const PROMPT_KEY = "report-prompts";
 /* A reading shows up only while the choice it belongs to is on screen. */
 const OURA = { who: "Oura", text: "Only 6 hours of sleep." };
 const STORIES = { who: "Instagram", text: "A few new stories." };
-const CYCLE = { who: "Cycle", text: "Day 21, luteal." };
+const CYCLE = { who: "Cycle", text: "Ovulatory phase." };
 const CLINIC = { who: "Google Calendar", text: "Clinic at 10:30." };
 const LUNCH = { who: "Google Calendar", text: "Lunch with Caitie at 12:30." };
 const WEATHER = { who: "Weather", text: "48° and clear." };
 const GARMIN = { who: "Garmin", text: "An easy walk yesterday." };
 const MOON = { who: "Astrology", text: "The moon is in Cancer." };
-const UNREAD = { who: "Messages", text: "4 unread messages." };
 
 const fresh = () => ({
   slept: false,
@@ -32,7 +31,7 @@ const fresh = () => ({
   walked: false,
   shopped: false,
   pleasure: false,
-  texted: false
+  flirted: false
 });
 
 let state = fresh();
@@ -156,8 +155,8 @@ function followUps(extra) {
   if (!state.pleasure && state.ate && state.snack && !has("Get a croissant")) {
     choices.push({ label: "Get a croissant", go: "landed", set: { pleasure: true }, context: MOON, note: { today: "Pleasure today, beside the food you already had.", month: "Care and pleasure together are the balance." } });
   }
-  if (!state.texted && !has("Text a friend")) {
-    choices.push({ label: "Text a friend", go: "landed", set: { texted: true }, context: UNREAD, note: { today: "A friend, today.", week: "Closeness in this week.", beyond: "People stay close in small notes." } });
+  if (!state.flirted && !has("Flirt with a friend")) {
+    choices.push({ label: "Flirt with a friend", go: "landed", set: { flirted: true }, context: CYCLE, note: { today: "A little flirt, today.", week: "Warmth in this week.", beyond: "Attraction has a place in a longer life." } });
   }
   if (!choices.length) choices.push({ label: "That's the morning", go: "landed" });
   return choices.slice(0, 4);
@@ -180,7 +179,7 @@ function reportLines() {
   if (state.walked) today.push("walked");
   if (state.shopped) today.push("stopped in a shop");
   if (state.pleasure) today.push("had something just because");
-  if (state.texted) today.push("wrote to a friend");
+  if (state.flirted) today.push("flirted with a friend");
 
   const lines = [{
     horizon: "Today",
@@ -188,7 +187,7 @@ function reportLines() {
   }];
 
   if (state.walked) lines.push({ horizon: "This week", text: "The walk is one easy movement day. It can be the whole of it." });
-  else if (state.texted || state.social) lines.push({ horizon: "This week", text: "People showed up this week, in a small way." });
+  else if (state.flirted || state.social) lines.push({ horizon: "This week", text: "People showed up this week, in a small way." });
   else if (state.slept) lines.push({ horizon: "This week", text: "Rest this morning belongs to a week that isn't only tasks." });
   else if (state.shopped || state.pleasure) lines.push({ horizon: "This week", text: "Pleasure is in the week on purpose." });
 
@@ -198,7 +197,7 @@ function reportLines() {
     lines.push({ horizon: "This month", text: "Breakfast and something for later are the steady month, one day at a time." });
   }
 
-  if (state.texted) lines.push({ horizon: "Beyond", text: "Friends stay close through small notes, over years rather than projects." });
+  if (state.flirted) lines.push({ horizon: "Beyond", text: "Attraction has a place in a longer life, in small moments." });
   else if (state.walked) lines.push({ horizon: "Beyond", text: "Short walks are how a body stays in a longer life." });
 
   return lines;
@@ -246,9 +245,9 @@ function contextsFor(choices) {
     lines.push(item);
   });
   if (lines.length <= 2) return lines;
-  const unread = lines.find((item) => item === UNREAD);
-  const rest = lines.filter((item) => item !== unread);
-  const kept = new Set(unread ? [rest[0], unread] : rest.slice(0, 2));
+  const phase = lines.find((item) => item === CYCLE);
+  const rest = lines.filter((item) => item !== phase);
+  const kept = new Set(phase ? [rest[0], phase] : rest.slice(0, 2));
   return lines.filter((item) => kept.has(item));
 }
 
