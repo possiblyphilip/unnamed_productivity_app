@@ -15,6 +15,18 @@ const LUNCH = { who: "Google Calendar", text: "Lunch with Caitie at 12:30." };
 const WEATHER = { who: "Weather", text: "48° and clear." };
 const GARMIN = { who: "Garmin", text: "An easy walk yesterday." };
 const MOON = { who: "Astrology", text: "The moon is in Cancer." };
+const SAMPLE = {
+  clinic: CLINIC.text,
+  lunch: LUNCH.text
+};
+const CLIENT_ID = "1053539375179-51f5cla0fu2rivktfhttg7vf5htlmv24.apps.googleusercontent.com";
+const CLIENT_KEY = "gcal-client-id";
+const TOKEN_KEY = "gcal-token";
+const GCAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+const PORTLAND = { latitude: 45.5152, longitude: -122.6765 };
+let weatherWhere = "";
+let calendarEvents = null;
+let calendarMessage = "";
 
 const fresh = () => ({
   slept: false,
@@ -279,6 +291,8 @@ function contextsFor(choices) {
   choices.forEach((choice) => {
     const item = [].concat(choice.context || [])[0];
     if (!item) return;
+    const source = { "Google Calendar": "gcal", "Weather": "weather", "Astrology": "sky" }[item.who];
+    if (source && disconnected.has(source)) return;
     const key = item.who + "\n" + item.text;
     if (seen.has(key)) return;
     seen.add(key);
@@ -343,7 +357,10 @@ function integrationsHtml() {
   const groups = INTEGRATIONS.map(([group, items]) => {
     const rows = items.map(([id, name, detail]) => {
       const on = !disconnected.has(id);
-      return `<button type="button" class="integ" data-integration="${id}" aria-pressed="${on ? "true" : "false"}"><span class="integ-name">${escapeHtml(name)}</span><span class="integ-detail">${on ? escapeHtml(detail) : "Off"}</span></button>`;
+      const shown = on ? integrationDetail(id, detail) : "Off";
+      const hint = id === "gcal" && on && !tokenRecord() ? calendarHint() : "";
+      const setup = hint ? `<p class="integ-hint">${escapeHtml(hint)}</p>` : "";
+      return `<div class="integ-row"><button type="button" class="integ" data-integration="${id}" aria-pressed="${on ? "true" : "false"}"><span class="integ-name">${escapeHtml(name)}</span><span class="integ-detail">${escapeHtml(shown)}</span></button>${setup}</div>`;
     }).join("");
     return `<section class="integ-group"><h2 class="horizon">${escapeHtml(group)}</h2>${rows}</section>`;
   }).join("");
@@ -368,6 +385,254 @@ function morningHtml() {
     <div class="choices">${current.map ? mapHtml() : ""}<div class="choice-stack">${choices}</div></div>
     <div class="context">${bottom}</div>
   `;
+}
+
+function clientId() {
+  return (localStorage.getItem(CLIENT_KEY) || CLIENT_ID).trim();
+}
+
+function allowedOrigin() {
+  return location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.protocol === "https:";
+}
+
+function phoneSignIn() {
+  return window.matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+}
+
+function redirectUri() {
+  const url = new URL(location.href);
+  url.hash = "";
+  url.search = "";
+  if (!url.pathname.endsWith("/")) url.pathname = url.pathname.slice(0, url.pathname.lastIndexOf("/") + 1) || "/";
+  return url.origin + url.pathname;
+}
+
+function calendarHint() {
+  if (allowedOrigin()) return "";
+  return "On the phone, open https://possiblyphilip.github.io/unnamed_productivity_app/ and connect from there.";
+}
+
+function tokenRecord() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TOKEN_KEY) || "null");
+    if (!raw || !raw.access_token || raw.expires_at < Date.now() + 60000) return null;
+    return raw;
+  } catch (err) {
+    return null;
+  }
+}
+
+function integrationDetail(id, fallback) {
+  if (id === "weather") return weatherWhere ? `${WEATHER.text} ${weatherWhere}` : WEATHER.text;
+  if (id === "sky") return MOON.text;
+  if (id === "gcal") return calendarDetail();
+  return fallback;
+}
+
+function calendarDetail() {
+  if (calendarMessage) return calendarMessage;
+  if (calendarEvents) {
+    if (!calendarEvents.length) return "Nothing else on the calendar today.";
+    return calendarEvents.slice(0, 2).map(eventLine).join(" ");
+  }
+  if (!clientId()) return "Paste a Google client ID, then tap to connect.";
+  return "Tap to connect today's events.";
+}
+
+function eventLine(event) {
+  const summary = event.summary || "Busy";
+  if (!event.start || !event.start.dateTime) return `${summary}, all day.`;
+  const time = new Date(event.start.dateTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${summary} at ${time}.`;
+}
+
+function applyCalendar(events) {
+  calendarEvents = events;
+  calendarMessage = "";
+  if (!events.length) {
+    CLINIC.text = "Nothing else on the calendar today.";
+    LUNCH.text = "Nothing else on the calendar today.";
+  } else {
+    CLINIC.text = eventLine(events[0]);
+    LUNCH.text = events[1] ? eventLine(events[1]) : "Nothing else on the calendar today.";
+  }
+}
+
+function restoreCalendar() {
+  calendarEvents = null;
+  calendarMessage = "";
+  CLINIC.text = SAMPLE.clinic;
+  LUNCH.text = SAMPLE.lunch;
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+function moonLine(date) {
+  const d = (date.getTime() - Date.UTC(2000, 0, 1, 12)) / 86400000;
+  const rad = Math.PI / 180;
+  const norm = (x) => ((x % 360) + 360) % 360;
+  const L = norm(218.3164477 + 13.17639648 * d);
+  const M = norm(134.9633964 + 13.06499295 * d);
+  const F = norm(93.2720950 + 13.22935024 * d);
+  const D = norm(297.8501921 + 12.19074877 * d);
+  const lon = norm(L
+    + 6.289 * Math.sin(M * rad)
+    - 1.274 * Math.sin((2 * D - M) * rad)
+    + 0.658 * Math.sin(2 * D * rad)
+    - 0.214 * Math.sin(2 * F * rad)
+    - 0.186 * Math.sin(D * rad));
+  const signs = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"];
+  const g = norm(357.529 + 0.98560028 * d);
+  const sun = norm(280.459 + 0.98564736 * d + 1.915 * Math.sin(g * rad) + 0.020 * Math.sin(2 * g * rad));
+  const phase = norm(lon - sun);
+  const growing = phase < 180 ? "waxing" : "waning";
+  return `The moon is ${growing} in ${signs[Math.floor(lon / 30)]}.`;
+}
+
+function weatherPhrase(code) {
+  if (code === 0) return "clear";
+  if (code <= 3) return "cloudy";
+  if (code === 45 || code === 48) return "foggy";
+  if (code >= 71 && code <= 77) return "snowy";
+  if (code >= 95) return "stormy";
+  if (code >= 51) return "rainy";
+  return "cloudy";
+}
+
+function applyWeather(data, where) {
+  const current = data && data.current;
+  if (!current || typeof current.temperature_2m !== "number") return;
+  WEATHER.text = `${Math.round(current.temperature_2m)}° and ${weatherPhrase(current.weather_code)}.`;
+  weatherWhere = where;
+}
+
+async function loadWeather(coords, where) {
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.searchParams.set("latitude", String(coords.latitude));
+  url.searchParams.set("longitude", String(coords.longitude));
+  url.searchParams.set("current", "temperature_2m,weather_code");
+  url.searchParams.set("temperature_unit", "fahrenheit");
+  url.searchParams.set("timezone", "auto");
+  const response = await fetch(url);
+  if (!response.ok) return;
+  applyWeather(await response.json(), where);
+  render();
+}
+
+function locateWeather() {
+  const fallback = () => loadWeather(PORTLAND, "Portland, until location is allowed.");
+  if (!navigator.geolocation) {
+    fallback();
+    return;
+  }
+  let settled = false;
+  const timer = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    fallback();
+  }, 4000);
+  navigator.geolocation.getCurrentPosition((position) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    loadWeather(position.coords, "");
+  }, () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    fallback();
+  }, { enableHighAccuracy: false, maximumAge: 600000, timeout: 3500 });
+}
+
+async function loadCalendar() {
+  const token = tokenRecord();
+  if (!token) return;
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+  url.searchParams.set("timeMin", new Date().toISOString());
+  url.searchParams.set("timeMax", end.toISOString());
+  url.searchParams.set("singleEvents", "true");
+  url.searchParams.set("orderBy", "startTime");
+  url.searchParams.set("maxResults", "5");
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token.access_token}` } });
+  if (response.status === 401) {
+    restoreCalendar();
+    render();
+    return;
+  }
+  if (!response.ok) {
+    calendarMessage = "Calendar didn't answer. Tap to try again.";
+    render();
+    return;
+  }
+  const data = await response.json();
+  applyCalendar(data.items || []);
+  render();
+}
+
+function storeToken(accessToken, expiresIn) {
+  localStorage.setItem(TOKEN_KEY, JSON.stringify({
+    access_token: accessToken,
+    expires_at: Date.now() + (Number(expiresIn) || 3600) * 1000
+  }));
+  disconnected.delete("gcal");
+}
+
+function takeRedirectToken() {
+  if (!location.hash.includes("access_token") && !location.hash.includes("error=")) return;
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+  history.replaceState(null, "", location.pathname + location.search);
+  if (hash.get("error") || !hash.get("access_token")) {
+    calendarMessage = "Calendar connection stopped.";
+    return;
+  }
+  storeToken(hash.get("access_token"), hash.get("expires_in"));
+}
+
+function startCalendarAuth() {
+  const id = clientId();
+  if (!id.endsWith(".apps.googleusercontent.com")) {
+    calendarMessage = "That value isn't a client ID. Use the one ending in .apps.googleusercontent.com.";
+    render();
+    return;
+  }
+  if (!allowedOrigin()) {
+    calendarMessage = calendarHint();
+    render();
+    return;
+  }
+  if (phoneSignIn()) {
+    const params = new URLSearchParams({
+      client_id: id,
+      redirect_uri: redirectUri(),
+      response_type: "token",
+      scope: GCAL_SCOPE,
+      include_granted_scopes: "true",
+      prompt: "select_account"
+    });
+    location.assign("https://accounts.google.com/o/oauth2/v2/auth?" + params.toString());
+    return;
+  }
+  const oauth = window.google && google.accounts && google.accounts.oauth2;
+  if (!oauth) {
+    calendarMessage = "Google sign-in is still loading. Tap again.";
+    render();
+    return;
+  }
+  calendarMessage = "";
+  oauth.initTokenClient({
+    client_id: id,
+    scope: GCAL_SCOPE,
+    callback: (resp) => {
+      if (!resp || resp.error) {
+        calendarMessage = "Calendar connection stopped.";
+        render();
+        return;
+      }
+      storeToken(resp.access_token, resp.expires_in);
+      loadCalendar();
+    }
+  }).requestAccessToken();
 }
 
 function render() {
@@ -425,9 +690,16 @@ app.addEventListener("click", (event) => {
     render();
     return;
   }
+  if (event.target.closest("[data-client-id]")) return;
   const integration = event.target.closest("[data-integration]");
   if (integration) {
     const id = integration.dataset.integration;
+    if (id === "gcal" && !disconnected.has(id)) {
+      if (tokenRecord() || calendarEvents) restoreCalendar();
+      else startCalendarAuth();
+      render();
+      return;
+    }
     if (disconnected.has(id)) disconnected.delete(id);
     else disconnected.add(id);
     render();
@@ -457,4 +729,14 @@ if (window.speechSynthesis) {
   window.speechSynthesis.addEventListener("voiceschanged", () => window.speechSynthesis.getVoices());
 }
 
+app.addEventListener("input", (event) => {
+  const field = event.target.closest("[data-client-id]");
+  if (!field) return;
+  localStorage.setItem(CLIENT_KEY, field.value.trim());
+});
+
+MOON.text = moonLine(new Date());
+takeRedirectToken();
+locateWeather();
+loadCalendar();
 render();
