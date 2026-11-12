@@ -15,6 +15,27 @@ const LUNCH = { who: "Google Calendar", text: "Lunch with Caitie at 12:30." };
 const WEATHER = { who: "Weather", text: "48° and clear." };
 const GARMIN = { who: "Garmin", text: "An easy walk yesterday." };
 const MOON = { who: "Astrology", text: "The moon is in Cancer." };
+const OURA_UP = { who: "Oura", text: "Readiness is up." };
+const LOOP = { who: "Garmin", text: "A favorite loop is nearby." };
+const LIKED = { who: "Instagram", text: "Someone you like posted." };
+const VOICE = { who: "WhatsApp", text: "A voice note from a friend." };
+const OURA_EVE = { who: "Oura", text: "Sleep is still a while off." };
+const WHOOP_EVE = { who: "Whoop", text: "Recovery has room." };
+const GOODNIGHT = { who: "Messages", text: "A goodnight is waiting." };
+const FEET = { who: "Fitbit", text: "You've been on your feet." };
+const SOURCE = {
+  "Google Calendar": "gcal",
+  "Weather": "weather",
+  "Astrology": "sky",
+  "Oura": "oura",
+  "Garmin": "garmin",
+  "Instagram": "instagram",
+  "WhatsApp": "whatsapp",
+  "Whoop": "whoop",
+  "Fitbit": "fitbit",
+  "Messages": "messages",
+  "Cycle": "cycle"
+};
 const SAMPLE = {
   clinic: CLINIC.text,
   lunch: LUNCH.text
@@ -39,11 +60,23 @@ const fresh = () => ({
   walked: false,
   shopped: false,
   pleasure: false,
-  flirted: false
+  flirted: false,
+  headed: false,
+  soft: false,
+  clearHour: false,
+  loop: false,
+  story: false,
+  voice: false,
+  dim: false,
+  bath: false,
+  goodnight: false,
+  feet: false,
+  daypart: daypart()
 });
 
+let clock = null;
 let state = fresh();
-let node = "morning";
+let node = startNode();
 let note = null;
 let screen = "morning";
 let menuOpen = false;
@@ -90,7 +123,228 @@ function promptsOn() {
   return localStorage.getItem(PROMPT_KEY) === "on";
 }
 
+function now() {
+  return clock || new Date();
+}
+
+function daypart(date) {
+  const hour = (date || now()).getHours();
+  if (hour >= 5 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 17) return "noon";
+  return "evening";
+}
+
+function startNode() {
+  const part = daypart();
+  if (part === "noon") return "noon";
+  if (part === "evening") return "evening";
+  return "morning";
+}
+
+function nowLabel() {
+  const part = state.daypart || daypart();
+  if (part === "noon") return "This afternoon";
+  if (part === "evening") return "This evening";
+  return "This morning";
+}
+
+function againLabel() {
+  const part = daypart();
+  if (part === "noon") return "Play the afternoon again";
+  if (part === "evening") return "Play the evening again";
+  return "Play the morning again";
+}
+
+function hasBegun() {
+  return state.slept || state.social || state.ate || state.showered || state.dressed || state.soft || state.snack || state.ateSnack || state.walked || state.shopped || state.pleasure || state.flirted || state.headed || state.clearHour || state.loop || state.story || state.voice || state.dim || state.bath || state.goodnight || state.feet;
+}
+
+function settlePeriod() {
+  if (hasBegun()) return;
+  if (node !== "morning" && node !== "noon" && node !== "evening") return;
+  const part = daypart();
+  node = startNode();
+  state.daypart = part;
+}
+
+function dayPlan() {
+  if (!calendarEvents) return { kind: "sample" };
+  const timed = calendarEvents.filter((event) => event.start && event.start.dateTime);
+  if (!timed.length) return { kind: "home" };
+  return { kind: "live", next: timed[0], later: timed[1] || null };
+}
+
+function titleOf(event) {
+  const title = (event && event.summary || "").trim().replace(/\.+$/, "");
+  return title || "the next thing";
+}
+
+function placeOf(event) {
+  const raw = (event && event.location || "").trim();
+  if (!raw) return "";
+  return raw.split(/[,\n]/)[0].trim();
+}
+
+function eventReading(event) {
+  const title = titleOf(event);
+  const start = new Date(event.start.dateTime);
+  const mins = Math.round((start.getTime() - Date.now()) / 60000);
+  if (mins <= 15) return `${title} is soon.`;
+  if (mins <= 40) return `${title} in about half an hour.`;
+  if (mins <= 80) return `${title} in about an hour.`;
+  if (mins <= 150) return `${title} in a couple of hours.`;
+  const time = start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${title} at ${time}.`;
+}
+
+function refreshReadings() {
+  const plan = dayPlan();
+  if (plan.kind === "live") {
+    CLINIC.text = eventReading(plan.next);
+    LUNCH.text = plan.later ? eventReading(plan.later) : "";
+    return;
+  }
+  if (plan.kind === "home") {
+    CLINIC.text = "";
+    LUNCH.text = "";
+    return;
+  }
+  CLINIC.text = SAMPLE.clinic;
+  LUNCH.text = SAMPLE.lunch;
+}
+
+function clinicContext() {
+  refreshReadings();
+  return dayPlan().kind === "home" ? null : CLINIC;
+}
+
+function lunchContext() {
+  refreshReadings();
+  const plan = dayPlan();
+  if (plan.kind === "sample" || (plan.kind === "live" && plan.later)) return LUNCH;
+  return null;
+}
+
+function snackNote(packed) {
+  const plan = dayPlan();
+  const month = packed
+    ? "Having something with you is how the month stays even."
+    : "This is the steady month, one gap at a time.";
+  if (plan.kind === "sample") {
+    return { today: "Food for the gap before lunch.", month };
+  }
+  if (plan.kind === "live" && plan.later) {
+    return { today: `Food for the gap before ${titleOf(plan.later)}.`, month };
+  }
+  return { today: "Something for later.", month };
+}
+
+function snackChoice() {
+  return {
+    label: "Eat your snack",
+    go: "afterSnack",
+    set: { ateSnack: true },
+    context: lunchContext(),
+    note: snackNote(false)
+  };
+}
+
+function driveText() {
+  const plan = dayPlan();
+  if (plan.kind === "live") return `Time to head to ${titleOf(plan.next)}.`;
+  return "Time to drive to your appointment.";
+}
+
+function periodName() {
+  const part = state.daypart || daypart();
+  if (part === "noon") return "afternoon";
+  if (part === "evening") return "evening";
+  return "morning";
+}
+
+function afterText() {
+  const plan = dayPlan();
+  if (plan.kind === "live" && plan.later) return `A little time before ${titleOf(plan.later)}.`;
+  if (plan.kind === "live") return `The rest of the ${periodName()} is open.`;
+  if (plan.kind === "home") return `The ${periodName()} can stay here.`;
+  return "A little time before lunch.";
+}
+
+function headChoice() {
+  const plan = dayPlan();
+  if (plan.kind !== "live") return null;
+  return {
+    label: `Head to ${titleOf(plan.next)}`,
+    go: "drive",
+    context: clinicContext(),
+    note: { today: "Getting there is this hour." }
+  };
+}
+
+function afterOuting() {
+  const part = state.daypart || daypart();
+  if (part === "noon") return "noonNext";
+  if (part === "evening") return "eveningNext";
+  return "afterAppt";
+}
+
+const noonFlirt = () => ({
+  label: "Send a flirty note",
+  go: "afterFlirt",
+  set: { flirted: true },
+  context: CYCLE,
+  note: { today: "A little flirt, today.", week: "Warmth in this week.", beyond: "Attraction has a place in a longer life." }
+});
+
+const eveningFlirt = () => ({
+  label: "Invite someone over",
+  go: "afterInvite",
+  set: { flirted: true },
+  context: CYCLE,
+  note: { today: "An invitation, if you want the company.", week: "Warmth in this week.", beyond: "Attraction has a place in a longer life." }
+});
+
+function board(options, exitLabel) {
+  const choices = options.filter(Boolean);
+  if (choices.length > 3) return choices.slice(0, 4);
+  if (!choices.length) return [{ label: exitLabel, go: "landed" }];
+  return choices.concat([{ label: exitLabel, go: "landed" }]);
+}
+
+function offered(choice) {
+  if (!choice) return null;
+  const item = [].concat(choice.context || [])[0];
+  const source = item && SOURCE[item.who];
+  if (source && disconnected.has(source)) return null;
+  return choice;
+}
+
+function noonServices() {
+  return [
+    !state.clearHour && { label: "Use a clear hour", go: "afterClear", set: { clearHour: true }, context: OURA_UP, note: { today: "A clear hour, this afternoon.", week: "One clear hour can be enough of the week." } },
+    !state.loop && { label: "Take the familiar loop", go: "afterLoop", set: { loop: true }, context: LOOP, note: { today: "A loop you already like.", week: "The easy walk can be the week.", beyond: "Short loops are how a body stays in a longer life." } },
+    !state.story && { label: "Watch their story", go: "afterStory", set: { story: true }, context: LIKED, note: { today: "A little contact today.", week: "Small contact is how this week stays connected." } },
+    !state.voice && { label: "Play the voice note", go: "afterVoice", set: { voice: true }, context: VOICE, note: { today: "A friend's voice, this afternoon.", week: "People showed up in a small way." } }
+  ].filter(Boolean).map(offered).filter(Boolean);
+}
+
+function eveningServices() {
+  return [
+    !state.dim && { label: "Dim things a little", go: "afterDim", set: { dim: true }, context: OURA_EVE, note: { today: "The evening can start to soften.", week: "An easy evening can be the whole of the week." } },
+    !state.bath && { label: "Take a slow bath", go: "afterBath", set: { bath: true }, context: WHOOP_EVE, note: { today: "A slow bath, because the day has room.", week: "An easy evening can be the whole of the week." } },
+    !state.goodnight && { label: "Say goodnight back", go: "afterGoodnight", set: { goodnight: true }, context: GOODNIGHT, note: { today: "A goodnight, returned.", week: "People showed up this week, in a small way." } },
+    !state.feet && { label: "Put your feet up", go: "afterFeet", set: { feet: true }, context: FEET, note: { today: "Feet up, for this hour.", week: "An easy evening can be the whole of the week." } }
+  ].filter(Boolean).map(offered).filter(Boolean);
+}
+
+function settleNode() {
+  if (dayPlan().kind === "home" && (node === "drive" || node === "route" || node === "afterAppt")) node = "open";
+}
+
 function scene() {
+  refreshReadings();
+  settlePeriod();
+  settleNode();
   switch (node) {
     case "morning":
       return {
@@ -122,7 +376,7 @@ function scene() {
         text: "Breakfast, here or with you.",
         choices: [
           { label: "Eat here", go: "ready", set: { ate: true }, context: CYCLE, note: { today: "Breakfast before you head out.", month: "Mornings with food in them are the longer pattern." } },
-          { label: "Take breakfast with you", go: "ready", set: { ate: true }, context: CLINIC, note: { today: "Breakfast comes along.", month: "Mornings with food in them are the longer pattern." } }
+          { label: "Take breakfast with you", go: "ready", set: { ate: true }, context: clinicContext(), note: { today: "Breakfast comes along.", month: "Mornings with food in them are the longer pattern." } }
         ]
       };
     case "ready":
@@ -133,19 +387,25 @@ function scene() {
           { label: "Get dressed", go: "pack", set: { dressed: true }, context: WEATHER, note: { today: "Dressed, and the morning can move." } }
         ]
       };
-    case "pack":
+    case "pack": {
+      const go = dayPlan().kind === "home" ? "open" : "drive";
+      const packed = snackNote(true);
+      const fruit = dayPlan().kind === "sample"
+        ? { today: "Fruit for the gap before lunch.", month: packed.month }
+        : packed;
       return {
         text: "A snack for later, if you want it along.",
         choices: [
-          { label: "Put a protein bar in your bag", go: "drive", set: { snack: "protein" }, context: LUNCH, note: { today: "Food for the gap before lunch.", month: "Having something with you is how the month stays even." } },
-          { label: "Pack some apple slices", go: "drive", set: { snack: "apple" }, context: LUNCH, note: { today: "Fruit for the gap before lunch.", month: "Having something with you is how the month stays even." } }
+          { label: "Put a protein bar in your bag", go, set: { snack: "protein" }, context: lunchContext(), note: packed },
+          { label: "Pack some apple slices", go, set: { snack: "apple" }, context: lunchContext(), note: fruit }
         ]
       };
+    }
     case "drive":
       return {
-        text: "Time to drive to your appointment.",
+        text: driveText(),
         choices: [
-          { label: "Directions", go: "route", context: CLINIC, note: { today: "Getting there is this hour." } }
+          { label: "Directions", go: "route", set: { headed: true }, context: clinicContext(), note: { today: "Getting there is this hour." } }
         ]
       };
     case "route":
@@ -153,18 +413,71 @@ function scene() {
         text: "This way.",
         map: true,
         choices: [
-          { label: "Head in", go: "afterAppt" }
+          { label: "Head in", go: afterOuting() }
         ]
       };
     case "afterAppt":
+    case "open":
       return {
-        text: "A little time before lunch.",
+        text: afterText(),
         choices: [
-          { label: "Eat your snack", go: "afterSnack", set: { ateSnack: true }, context: LUNCH, note: { today: "Food in the gap before lunch.", month: "This is the steady month, one gap at a time." } },
+          snackChoice(),
           { label: "Walk around the block", go: "afterWalk", set: { walked: true }, context: GARMIN, note: { today: "Movement in this hour.", week: "One easy walk can be the week.", beyond: "Short walks are how a body stays in a longer life." } },
           { label: "Visit a second hand shop nearby", go: "afterShop", set: { shopped: true }, context: MOON, note: { today: "Something pleasing in this hour.", week: "Pleasure is in the week on purpose." } }
         ]
       };
+    case "noon":
+      return {
+        text: "Good afternoon.",
+        choices: [
+          { label: "Have lunch", go: "afterLunch", set: { ate: true }, context: CYCLE, note: { today: "Lunch in the middle of the day.", week: "A fed afternoon leaves more of the week usable." } },
+          headChoice(),
+          { label: "Step outside", go: "afterNoonWalk", set: { walked: true }, context: WEATHER, note: { today: "Air in this hour.", week: "One easy walk can be the week." } },
+          noonFlirt()
+        ].filter(Boolean)
+      };
+    case "afterLunch":
+      return { text: "Lunch can sit a minute.", choices: board(noonServices(), "Back to the afternoon") };
+    case "afterNoonWalk":
+      return { text: "A little air.", choices: board(noonServices(), "Back to the afternoon") };
+    case "afterFlirt":
+      return { text: "The note can stay light.", choices: board(noonServices(), "Back to the afternoon") };
+    case "noonNext":
+      return { text: afterText(), choices: board(noonServices(), "Back to the afternoon") };
+    case "afterClear":
+      return { text: "That hour is yours.", choices: board(noonServices(), "Back to the afternoon") };
+    case "afterLoop":
+      return { text: "The familiar way.", choices: board(noonServices(), "Back to the afternoon") };
+    case "afterStory":
+      return { text: "Their story can sit with you.", choices: board(noonServices(), "Back to the afternoon") };
+    case "afterVoice":
+      return { text: "You heard them.", choices: board(noonServices(), "Back to the afternoon") };
+    case "evening":
+      return {
+        text: "Good evening.",
+        choices: [
+          { label: "Make something to eat", go: "afterDinner", set: { ate: true }, context: CYCLE, note: { today: "Dinner, without a rush.", month: "Evenings with food in them are the longer pattern." } },
+          headChoice(),
+          { label: "Change into something soft", go: "afterSoft", set: { soft: true }, context: MOON, note: { today: "The day can loosen.", week: "Pleasure is in the week on purpose." } },
+          eveningFlirt()
+        ].filter(Boolean)
+      };
+    case "afterDinner":
+      return { text: "Dinner's here.", choices: board(eveningServices(), "Let the evening be") };
+    case "afterSoft":
+      return { text: "Softer now.", choices: board(eveningServices(), "Let the evening be") };
+    case "afterInvite":
+      return { text: "The invitation is out.", choices: board(eveningServices(), "Let the evening be") };
+    case "eveningNext":
+      return { text: afterText(), choices: board(eveningServices(), "Let the evening be") };
+    case "afterDim":
+      return { text: "A little dimmer.", choices: board(eveningServices(), "Let the evening be") };
+    case "afterBath":
+      return { text: "The bath can take its time.", choices: board(eveningServices(), "Let the evening be") };
+    case "afterGoodnight":
+      return { text: "Goodnight, sent.", choices: board(eveningServices(), "Let the evening be") };
+    case "afterFeet":
+      return { text: "Feet up.", choices: board(eveningServices(), "Let the evening be") };
     case "afterSnack":
       return {
         text: "The snack is done.",
@@ -189,7 +502,7 @@ function scene() {
         choices: [
           { label: "A note this evening", prompts: true },
           { label: "I'll open this when I want", prompts: false },
-          { label: "Play the morning again", go: "morning", reset: true }
+          { label: againLabel(), go: startNode(), reset: true }
         ]
       };
   }
@@ -198,9 +511,7 @@ function scene() {
 function followUps(extra) {
   const choices = extra.slice();
   const has = (label) => choices.some((choice) => choice.label === label);
-  if (!state.ateSnack && !has("Eat your snack")) {
-    choices.push({ label: "Eat your snack", go: "afterSnack", set: { ateSnack: true }, context: LUNCH, note: { today: "Food in the gap before lunch.", month: "This is the steady month, one gap at a time." } });
-  }
+  if (!state.ateSnack && !has("Eat your snack")) choices.push(snackChoice());
   if (!state.walked && node !== "afterWalk" && !has("Walk around the block")) {
     choices.push({ label: "Walk around the block", go: "afterWalk", set: { walked: true }, context: GARMIN, note: { today: "Movement in this hour.", week: "One easy walk can be the week.", beyond: "Short walks are how a body stays in a longer life." } });
   }
@@ -224,33 +535,60 @@ function reportLines() {
   const today = [];
   if (state.slept) today.push("rested");
   if (state.social) today.push("spent a little time online");
-  if (state.ate) today.push("ate breakfast");
-  if (state.showered || state.dressed) today.push("got ready");
+  if (state.ate) {
+    if (state.daypart === "noon") today.push("ate lunch");
+    else if (state.daypart === "evening") today.push("ate dinner");
+    else today.push("ate breakfast");
+  }
+  if (state.soft) today.push("changed into something soft");
+  else if (state.showered || state.dressed) today.push("got ready");
   if (state.snack && !state.ateSnack) today.push("packed a snack");
   if (state.ateSnack) today.push("ate your snack");
-  if (state.walked) today.push("walked");
+  const plan = dayPlan();
+  if (state.headed && plan.kind === "live") today.push("headed to " + titleOf(plan.next));
+  if (state.walked) today.push(state.daypart === "noon" ? "stepped outside" : "walked");
   if (state.shopped) today.push("stopped in a shop");
   if (state.pleasure) today.push("had something just because");
-  if (state.flirted) today.push("flirted with a friend");
+  if (state.flirted) {
+    if (state.daypart === "noon") today.push("sent a flirty note");
+    else if (state.daypart === "evening") today.push("invited someone over");
+    else today.push("flirted with a friend");
+  }
+  if (state.clearHour) today.push("used a clear hour");
+  if (state.loop) today.push("took a familiar loop");
+  if (state.story) today.push("watched a story");
+  if (state.voice) today.push("played a voice note");
+  if (state.dim) today.push("dimmed the evening");
+  if (state.bath) today.push("took a slow bath");
+  if (state.goodnight) today.push("said goodnight back");
+  if (state.feet) today.push("put your feet up");
 
+  const quiet = state.daypart === "noon" ? "A quiet afternoon." : state.daypart === "evening" ? "A quiet evening." : "A quiet morning.";
   const lines = [{
     horizon: "Today",
-    text: today.length ? "You " + joinList(today) + "." : "A quiet morning."
+    text: today.length ? "You " + joinList(today) + "." : quiet
   }];
 
-  if (state.walked) lines.push({ horizon: "This week", text: "The walk is one easy movement day. It can be the whole of it." });
-  else if (state.flirted || state.social) lines.push({ horizon: "This week", text: "People showed up this week, in a small way." });
+  if (state.walked || state.loop) lines.push({ horizon: "This week", text: "The walk is one easy movement day. It can be the whole of it." });
+  else if (state.flirted || state.social || state.story || state.voice || state.goodnight) lines.push({ horizon: "This week", text: "People showed up this week, in a small way." });
   else if (state.slept) lines.push({ horizon: "This week", text: "Rest this morning belongs to a week that isn't only tasks." });
   else if (state.shopped || state.pleasure) lines.push({ horizon: "This week", text: "Pleasure is in the week on purpose." });
+  else if (state.clearHour) lines.push({ horizon: "This week", text: "One clear hour can be enough of the week." });
+  else if (state.bath || state.dim || state.feet) lines.push({ horizon: "This week", text: "An easy evening can be the whole of the week." });
 
   if ((state.ate || state.ateSnack || state.snack) && state.pleasure) {
     lines.push({ horizon: "This month", text: "Food you planned, and something just because, is the month in balance." });
   } else if (state.ate || state.ateSnack || state.snack) {
-    lines.push({ horizon: "This month", text: "Breakfast and something for later are the steady month, one day at a time." });
+    const monthFood = state.daypart === "noon"
+      ? "Lunch is the steady month, one afternoon at a time."
+      : state.daypart === "evening"
+        ? "Dinner is the steady month, one evening at a time."
+        : "Breakfast and something for later are the steady month, one day at a time.";
+    lines.push({ horizon: "This month", text: monthFood });
   }
 
   if (state.flirted) lines.push({ horizon: "Beyond", text: "Attraction has a place in a longer life, in small moments." });
-  else if (state.walked) lines.push({ horizon: "Beyond", text: "Short walks are how a body stays in a longer life." });
+  else if (state.walked || state.loop) lines.push({ horizon: "Beyond", text: "Short walks are how a body stays in a longer life." });
 
   return lines;
 }
@@ -272,6 +610,7 @@ function enter(id, set, reset, nextNote) {
   node = id;
   if (node === "ready" && state.ate && (state.showered || state.dressed)) node = "pack";
   if (node === "hungry" && state.ate) node = "ready";
+  settleNode();
   render();
 }
 
@@ -290,8 +629,8 @@ function contextsFor(choices) {
   const lines = [];
   choices.forEach((choice) => {
     const item = [].concat(choice.context || [])[0];
-    if (!item) return;
-    const source = { "Google Calendar": "gcal", "Weather": "weather", "Astrology": "sky" }[item.who];
+    if (!item || !item.text) return;
+    const source = SOURCE[item.who];
     if (source && disconnected.has(source)) return;
     const key = item.who + "\n" + item.text;
     if (seen.has(key)) return;
@@ -311,7 +650,11 @@ function couple(lines) {
 }
 
 function mapHtml() {
-  return `<figure class="map"><img src="map.png" alt="Map to the clinic"><figcaption>© OpenStreetMap</figcaption></figure>`;
+  const plan = dayPlan();
+  const place = plan.kind === "live" ? placeOf(plan.next) : "";
+  const toward = place || (plan.kind === "live" ? titleOf(plan.next) : "the clinic");
+  const caption = place ? `${place}. © OpenStreetMap` : "© OpenStreetMap";
+  return `<figure class="map"><img src="map.png" alt="Map toward ${escapeHtml(toward)}"><figcaption>${escapeHtml(caption)}</figcaption></figure>`;
 }
 
 function readingsHtml(lines) {
@@ -333,7 +676,7 @@ function menuHtml() {
     <button type="button" class="scrim" data-menu aria-label="Close menu"></button>
     <nav class="menu" aria-label="Menu">
       <p class="horizon">Menu</p>
-      ${item("morning", "This morning")}
+      ${item("morning", nowLabel())}
       ${item("plan", "Plan ahead")}
       ${item("integrations", "Integrations")}
     </nav>
@@ -449,13 +792,7 @@ function eventLine(event) {
 function applyCalendar(events) {
   calendarEvents = events;
   calendarMessage = "";
-  if (!events.length) {
-    CLINIC.text = "Nothing else on the calendar today.";
-    LUNCH.text = "Nothing else on the calendar today.";
-  } else {
-    CLINIC.text = eventLine(events[0]);
-    LUNCH.text = events[1] ? eventLine(events[1]) : "Nothing else on the calendar today.";
-  }
+  refreshReadings();
 }
 
 function restoreCalendar() {
@@ -740,3 +1077,6 @@ takeRedirectToken();
 locateWeather();
 loadCalendar();
 render();
+setInterval(() => {
+  if (screen === "morning") render();
+}, 60000);
