@@ -124,11 +124,11 @@ function expect(name, r, rule) {
   console.log((ok ? "ok   " : "FAIL ") + name + "  ->  " + (r.cards.join(", ") || "(quiet)"));
 }
 
-expect("08:10 first screen", screen(normal, [], "08:10"), { has: ["coffee_window", "stretch_shower"], lacks: ["perfume", "market_flowers", "write_25"], count: [2, 4] });
-expect("after shower: dressing comes next, not perfume", screen(normal, ["stretch_shower"], "08:10"), { has: ["get_dressed"], lacks: ["perfume", "market_flowers"] });
-expect("after shower and dressing: the market is on offer", screen(normal, ["stretch_shower", "get_dressed"], "08:10"), { offers: ["market_flowers"] });
-expect("after the market walk: coffee and eggs are gone, a croissant is next", screen(normal, ["stretch_shower", "get_dressed", "market_flowers"], "08:10"), { has: ["croissant"], lacks: ["coffee_window", "eat_first", "walk_block"] });
-expect("after the croissant: writing opens up", screen(normal, ["stretch_shower", "get_dressed", "market_flowers", "croissant"], "08:10"), { lacks: ["croissant", "coffee_window", "eat_first"], any: [["write_25", "putoff_ten", "two_emails", "flowers_water"]] });
+expect("08:10 first screen", screen(normal, [], "08:10"), { has: ["coffee_window", "shower"], lacks: ["perfume", "market_flowers", "write_25"], count: [2, 4] });
+expect("after shower: dressing comes next, not perfume", screen(normal, ["shower"], "08:10"), { has: ["get_dressed"], lacks: ["perfume", "market_flowers"] });
+expect("after shower and dressing: the market is on offer", screen(normal, ["shower", "get_dressed"], "08:10"), { offers: ["market_flowers"] });
+expect("after the market walk: coffee and eggs are gone, a croissant is next", screen(normal, ["shower", "get_dressed", "market_flowers"], "08:10"), { has: ["croissant"], lacks: ["coffee_window", "eat_first", "walk_block"] });
+expect("after the croissant: writing opens up", screen(normal, ["shower", "get_dressed", "market_flowers", "croissant"], "08:10"), { lacks: ["croissant", "coffee_window", "eat_first"], any: [["write_25", "putoff_ten", "two_emails", "flowers_water"]] });
 (function () {
   const n = normal.nodes[normal.nodes[normal.root].children["picked:coffee_window"]];
   const r = { cards: normal.nodes[n.children.reroll].cards, node: n };
