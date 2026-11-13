@@ -44,7 +44,7 @@
   var notes = load("cc.notes", []);
   var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true, auto: true }, load("cc.test", {}));
   test.sleep = snapSleep(test.sleep);
-  var ui = { sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null };
+  var ui = { diag: null, sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null };
   var holdTimer = null;
   var exitTimer = null;
   var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], place: null, moon: Ctx.moonFor(new Date()) };
@@ -312,7 +312,7 @@
     };
     return '<button type="button" class="scrim" data-act="navmenu" aria-label="Close menu"></button>' +
       '<nav class="menu" aria-label="Menu"><button type="button" class="hamburger" data-act="navmenu" aria-label="Close menu"><span></span><span></span><span></span></button>' +
-      '<p class="horizon">Menu</p>' + item("today", "Today") + item("integrations", "Integrations") +
+      '<p class="horizon">Menu</p>' + item("today", "Today") + item("integrations", "Integrations") + item("install", "Install help") +
       (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
       (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
@@ -339,6 +339,46 @@
     }
     var pressed = LENS_IDS[id] ? ' aria-pressed="' + (on ? "true" : "false") + '"' : "";
     return '<button type="button" class="integ" data-act="' + act + '"' + attrs + pressed + '><span class="name">' + esc(name) + '</span><span class="detail">' + esc(detail) + "</span></button>" + extra;
+  }
+
+  // Why a phone may not offer to install the app. Checks what Chrome needs and says what is missing.
+  function runDiag() {
+    ui.diag = null;
+    var ua = navigator.userAgent;
+    var chrome = /Chrome\/(\d+)/.exec(ua);
+    var other = /EdgA|SamsungBrowser|OPR\/|Firefox|DuckDuckGo/.test(ua);
+    var inApp = /; wv\)|FBAN|FBAV|Instagram|Snapchat|Line\/|GSA\/|Twitter|TikTok/i.test(ua);
+    var standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+    var rows = [
+      ["Opened in Chrome" + (chrome ? " (version " + chrome[1] + ")" : ""), !!chrome && !other, "This is not Chrome. Open the address in Chrome."],
+      ["Not inside another app", !inApp, "This looks like a browser built into another app. Open the address in Chrome itself."],
+      ["Secure address (https)", window.isSecureContext === true, "Use the https address."]
+    ];
+    var sw = ("serviceWorker" in navigator)
+      ? navigator.serviceWorker.getRegistration().then(function (r) { return !!r; }).catch(function () { return false; })
+      : Promise.resolve(false);
+    var manifest = fetch("manifest.webmanifest").then(function (r) { return r.json(); }).then(function (m) {
+      var sizes = (m.icons || []).map(function (i) { return i.sizes; }).join(" ");
+      return !!(m.name && m.start_url && /standalone|fullscreen/.test(m.display) && sizes.indexOf("192x192") !== -1 && sizes.indexOf("512x512") !== -1);
+    }).catch(function () { return false; });
+    Promise.all([sw, manifest]).then(function (r) {
+      rows.push(["Helper registered (service worker)", r[0], "Not registered yet. Reload the page once or twice, then check again."]);
+      rows.push(["Install details readable (manifest)", r[1], "The manifest could not be read."]);
+      rows.push(["Chrome says it can be installed", !!installEvent, "Chrome decides when to offer it. After the rows above are all Yes, reload once more, then open Chrome's menu (three dots)."]);
+      rows.push(["Already running as an installed app", standalone, ""]);
+      ui.diag = { rows: rows };
+      if (ui.screen === "install") { render(); }
+    });
+  }
+
+  function installHtml() {
+    var d = ui.diag;
+    var rows = !d ? '<div class="integ"><span class="name">Checking</span></div>' : d.rows.map(function (r) {
+      return '<div class="integ"><span class="name">' + esc(r[0]) + ": " + (r[1] ? "Yes" : "No") + "</span>" + (!r[1] && r[2] ? '<span class="detail">' + esc(r[2]) + "</span>" : "") + "</div>";
+    }).join("");
+    return '<header class="top"><div class="row">' + hamburger() + "<h1>Install help</h1></div>" +
+      '<p class="sub">In Chrome, open the menu (three dots), then Install app or Add to Home screen.</p></header>' +
+      '<div class="screen"><section class="integ-group">' + rows + '<button type="button" class="pill only-pill" data-act="rediag">Check again</button></section></div>';
   }
 
   function integrationsHtml() {
@@ -375,6 +415,8 @@
     var html;
     if (ui.screen === "integrations") {
       html = integrationsHtml();
+    } else if (ui.screen === "install") {
+      html = installHtml();
     } else {
       var x = compute();
       var cards = cardsFor(x);
@@ -574,9 +616,10 @@
       ui.draft = ""; ui.noteSent = true;
     }
     else if (act === "navmenu") { ui.menu = !ui.menu; }
+    else if (act === "rediag") { runDiag(); }
     else if (act === "fullscreen") { toggleFullscreen(); ui.menu = false; }
     else if (act === "install") { if (installEvent) { installEvent.prompt(); installEvent = null; } ui.menu = false; }
-    else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.menu = false; }
+    else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.menu = false; if (ui.screen === "install") { runDiag(); } }
     else if (act === "lens") { var lid = el.getAttribute("data-lens"); lenses[lid].enabled = !lenses[lid].enabled; }
     else if (act === "lenshide") { var hid = el.getAttribute("data-lens"); lenses[hid].hidden = !lenses[hid].hidden; }
     else if (act === "time") {
