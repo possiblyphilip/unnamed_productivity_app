@@ -28,6 +28,9 @@ function checkTree(label, bundle) {
     if (!("expired" in n.children)) { bad(where + ": missing 'expired' child"); }
     if (n.reroll && !n.children.reroll) { bad(where + ": reroll on but no reroll child"); }
     if (!n.reroll && n.children.reroll) { bad(where + ": reroll child but reroll off"); }
+    const real = n.cards.filter(function (x) { return !OPT[x].filler; }).length;
+    const fillers = n.cards.length - real;
+    if (fillers > 0 && real >= (n.type === "during_event" ? 1 : 2)) { bad(where + ": fillers crowd a screen that has " + real + " real options"); }
     let flirty = 0;
     n.cards.forEach(function (cid) {
       const c = bundle.cards[cid];
@@ -74,11 +77,14 @@ function checkTree(label, bundle) {
   if (prevEnd !== mins("23:59")) { bad(label + ": the do-nothing chain ends at " + Model.hhmm(prevEnd)); }
 }
 
-// follow a list of picks from the first screen, then ask what is current at a given time
+// follow a list of picks starting from the screen that is current at `now` (the do-nothing path), looking
+// on the "show different options" page too when a card is not on the first screen
 function after(bundle, picks, now) {
-  let id = bundle.root;
+  let id = Model.advance(bundle, { node: bundle.root }, mins(now)).id;
   picks.forEach(function (p) {
-    const next = bundle.nodes[id].children["picked:" + p];
+    const n = bundle.nodes[id];
+    let next = n.children["picked:" + p];
+    if (!next && n.reroll) { next = bundle.nodes[n.children.reroll].children["picked:" + p]; }
     if (!next) { bad("cannot pick " + p + " at " + id); return; }
     id = next;
   });
@@ -143,11 +149,11 @@ expect("11:40 before the appointment", screen(normal, [], "11:40"), { title: "Be
   r.offered = r.cards.concat(r.node.reroll ? normal.nodes[r.node.children.reroll].cards : []);
   expect("after getting ready, leaving early is on offer", r, { offers: ["leave_early"], lacks: ["getting_ready"] });
 })();
-expect("12:40 during the appointment: one card", screen(normal, [], "12:40"), { title: "Appointment", count: [1, 1], has: ["directions"] });
+expect("12:40 during the appointment: one card, leave when it is time", screen(normal, [], "12:40"), { title: "Appointment", count: [1, 1], has: ["leave_now"] });
 expect("14:10 dry afternoon offers the park", screen(normal, [], "14:10"), { title: "Afternoon", offers: ["park_walk"] });
 expect("14:10 with rain all day: no park walk", screen(allRain, [], "14:10"), { lacks: ["park_walk"] });
 expect("14:10 low energy starts with lying down", screen(low, [], "14:10"), { first: "lie_down_20" });
-expect("20:30 night is quiet", screen(normal, [], "20:30"), { quiet: true, title: "Tonight" });
+expect("20:30 night is never empty: a bedtime routine", screen(normal, [], "20:30"), { title: "Tonight", count: [2, 4], any: [["phone_charge", "wash_face"]] });
 expect("no appointment: 11:40 is still morning", screen(noEvents, [], "11:40"), { title: "Morning" });
 expect("evening starts with dinner", screen(normal, [], "18:00"), { any: [["chicken_bowl", "soup_bread", "new_recipe"]], title: "Evening" });
 
@@ -157,6 +163,54 @@ expect("evening starts with dinner", screen(normal, [], "18:00"), { any: [["chic
   Object.keys(low.nodes).forEach(function (id) { low.nodes[id].cards.forEach(function (c) { if (OPT[c].demanding) { hits.push(c); } }); });
   if (hits.length) { bad("low energy offers demanding options: " + hits.slice(0, 5).join(",")); }
   console.log((hits.length ? "FAIL " : "ok   ") + "low energy never offers a demanding option");
+})();
+
+// what each pick leads to
+(function () {
+  const evening = normal.nodes[Model.advance(normal, { node: normal.root }, mins("18:00")).id];
+  const cooking = normal.nodes[evening.children["picked:new_recipe"]];
+  expect("cooking something new leads to recipes, and only recipes", { cards: cooking.cards, offered: cooking.cards.concat(cooking.reroll ? normal.nodes[cooking.children.reroll].cards : []), node: cooking }, { lacks: ["chicken_bowl", "soup_bread", "clear_up", "evening_text"], count: [2, 4], any: [["recipe_risotto"]] });
+  const recipeOnly = cooking.cards.every(function (x) { return x.indexOf("recipe_") === 0; });
+  if (!recipeOnly) { bad("the screen after 'cook something new' is not all recipes: " + cooking.cards.join(",")); }
+  const cooked = normal.nodes[cooking.children["picked:recipe_curry"]];
+  expect("after picking a recipe, dinner is done and the evening carries on", { cards: cooked.cards, offered: cooked.cards.concat(cooked.reroll ? normal.nodes[cooked.children.reroll].cards : []), node: cooked }, { lacks: ["new_recipe", "chicken_bowl", "soup_bread", "recipe_risotto"], any: [["clear_up", "evening_text", "walk_after"]] });
+})();
+expect("after writing: read it back or take a break", screen(normal, ["coffee_window", "write_25"], "08:10"), { has: ["read_back"] });
+expect("after the park walk: sit down for a bit", screen(normal, ["park_walk"], "14:10"), { has: ["park_sit"] });
+expect("after sketching: pin it up", screen(normal, ["sketch_15"], "14:10"), { offers: ["pin_sketch"] });
+expect("after a bath: get comfortable", screen(normal, ["chicken_bowl", "clear_up", "evening_text", "bath"], "18:00"), { offers: ["comfy_clothes"] });
+expect("after leaving for the appointment: phone on silent", screen(normal, ["leave_now"], "12:40"), { has: ["silent_phone"] });
+expect("after the phone is on silent there is still something", screen(normal, ["leave_now", "silent_phone"], "12:40"), { count: [1, 1] });
+expect("after getting ready: leave early comes first", screen(normal, ["getting_ready"], "11:40"), { first: "leave_early" });
+
+// the day never runs dry: from every part of the day, picking the first card keeps giving something
+(function () {
+  const sess = Planner.session(Sample.context, { energy: "normal" });
+  const b = sess.bundle;
+  const times = [["morning", "08:10", 8], ["before the appointment", "11:40", 4], ["the appointment", "12:40", 5], ["afternoon", "14:10", 8], ["evening", "18:00", 8], ["night", "20:30", 4]];
+  times.forEach(function (t) {
+    let id = Model.advance(b, { node: b.root }, mins(t[1]), sess.ensure).id, steps = 0;
+    for (let i = 0; i < 40; i++) {
+      const v = Model.advance(b, { node: id }, mins(t[1]), sess.ensure);
+      if (!v.node || !v.cards.length) { break; }
+      steps++;
+      id = v.node.children["picked:" + v.cards[0].id];
+    }
+    const ok = steps >= t[2];
+    if (!ok) { bad("the " + t[0] + " runs dry after " + steps + " picks (wanted at least " + t[2] + ")"); }
+    console.log((ok ? "ok   " : "FAIL ") + "the " + t[0] + ": first card " + steps + " times in a row, still something to choose");
+  });
+  // the bedtime routine ends the day
+  let id = Model.advance(b, { node: b.root }, mins("20:30"), sess.ensure).id;
+  ["phone_charge", "wash_face", "read_bed", "lights_out"].forEach(function (p) {
+    const v = Model.advance(b, { node: id }, mins("20:30"), sess.ensure);
+    if (v.cards.map(function (x) { return x.id; }).indexOf(p) === -1) { bad("bedtime: " + p + " is not on offer"); return; }
+    id = v.node.children["picked:" + p];
+  });
+  const last = Model.advance(b, { node: id }, mins("20:30"), sess.ensure);
+  const ok = !last.cards.length && last.node && last.node.quiet;
+  if (!ok) { bad("after lights out the evening should be done"); }
+  console.log((ok ? "ok   " : "FAIL ") + "after lights out the day is done  ->  " + (last.node ? last.node.quiet : ""));
 })();
 
 // sleep: three plans, a gentler one after about 5 hours, the ordinary one at 7, more room at 9

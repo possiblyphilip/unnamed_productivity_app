@@ -34,6 +34,13 @@
     return (opts.energy === "low" ? -1 : 0) + (b === 5 ? -1 : b === 9 ? 1 : 0);
   }
 
+  var ALL_BLOCKS = ["morning", "afternoon", "evening", "night", "before_event", "during_event"];
+  function anywhere(rank) {
+    var at = {};
+    ALL_BLOCKS.forEach(function (t) { at[t] = { rank: rank }; });
+    return at;
+  }
+
   function opt(id, text, label, x) { x.id = id; x.text = text; x.label = label; return x; }
 
   var OPTIONS = [
@@ -42,41 +49,74 @@
     opt("shower", "Take a shower", "Showering", { dur: 15, goal: "g_body", signal: { energy: 1 }, gives: ["showered"], at: { morning: { rank: 3 } } }),
     opt("stretch", "Stretch", "Stretching", { dur: 10, goal: "g_body", gentle: true, signal: { energy: 1 }, skipIf: ["market"], at: { morning: { rank: 3.5 } } }),
     opt("get_dressed", "Get dressed", "Getting dressed", { dur: 10, gives: ["dressed"], at: { morning: { rank: 1.2, needs: ["showered"] } } }),
-    opt("write_25", "Write for 25 minutes", "Writing", { dur: 25, goal: "g_writing", horizon: "medium", demanding: true, signal: { energy: 1 }, at: { morning: { rank: 5, needs: ["coffee"] }, afternoon: { rank: 1 } } }),
-    opt("putoff_ten", "Spend ten minutes on something you've been putting off", "Ten minutes on something you were putting off", { kind: "variation", dur: 10, goal: "g_followthrough", horizon: "medium", demanding: true, signal: { overwhelm: 1 }, at: { morning: { rank: 6, needs: ["coffee"] } } }),
-    opt("two_emails", "Answer two emails", "Two emails", { kind: "variation", dur: 15, goal: "g_admin", at: { morning: { rank: 7, needs: ["coffee"] } } }),
+    opt("write_25", "Write for 25 minutes", "Writing", { dur: 25, goal: "g_writing", horizon: "medium", demanding: true, signal: { energy: 1 }, gives: ["wrote"], at: { morning: { rank: 5, needs: ["coffee"] }, afternoon: { rank: 1 } } }),
+    opt("putoff_ten", "Spend ten minutes on something you've been putting off", "Ten minutes on something you were putting off", { kind: "variation", dur: 10, goal: "g_followthrough", horizon: "medium", demanding: true, signal: { overwhelm: 1 }, gives: ["started"], at: { morning: { rank: 6, needs: ["coffee"] } } }),
+    opt("two_emails", "Answer two emails", "Two emails", { kind: "variation", dur: 15, goal: "g_admin", gives: ["mailed"], at: { morning: { rank: 7, needs: ["coffee"] } } }),
     opt("perfume", "Put on your good perfume", "Perfume on", { kind: "flirty", chance: 0.75, dur: 2, goal: "g_joy", signal: { mood: 1, social: 1 }, at: { morning: { rank: 8, needs: ["dressed"] } } }),
     opt("market_flowers", "Walk to the market for flowers", "Walk to the market", { kind: "wild", dur: 40, goal: "g_joy", horizon: "medium", demanding: true, signal: { energy: 1, social: 1 }, gives: ["market"], at: { morning: { rank: 1.5, needs: ["dressed"] } } }),
     opt("croissant", "Pick up a croissant and a coffee", "Croissant and coffee", { dur: 15, goal: "g_nutrition", signal: { mood: 1 }, gives: ["fed", "coffee"], skipIf: ["fed"], at: { morning: { rank: 0, needs: ["market"] } } }),
     opt("flowers_water", "Put the flowers in water", "Flowers in water", { dur: 5, goal: "g_joy", signal: { mood: 1 }, at: { morning: { rank: 2, needs: ["market"] } } }),
     opt("tidy_surface", "Put on music and clear one surface", "Clearing a surface", { kind: "wild", dur: 10, goal: "g_calm", signal: { energy: 1 }, at: { morning: { rank: 10, needs: ["coffee"] } } }),
-    opt("sketch_15", "Sketch for 15 minutes", "Sketching", { kind: "variation", dur: 15, goal: "g_creative", horizon: "medium", signal: { mood: 1 }, at: { morning: { rank: 11, needs: ["coffee"] }, afternoon: { rank: 2 } } }),
-    opt("read_20", "Read for 20 minutes", "Reading", { dur: 20, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { morning: { rank: 12, needs: ["coffee"] }, afternoon: { rank: 7 }, evening: { rank: 10 } } }),
+    opt("sketch_15", "Sketch for 15 minutes", "Sketching", { kind: "variation", dur: 15, goal: "g_creative", horizon: "medium", signal: { mood: 1 }, gives: ["sketched"], at: { morning: { rank: 11, needs: ["coffee"] }, afternoon: { rank: 2 } } }),
+    opt("read_20", "Read for 20 minutes", "Reading", { dur: 20, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, gives: ["read"], at: { morning: { rank: 12, needs: ["coffee"] }, afternoon: { rank: 7 }, evening: { rank: 10 } } }),
     opt("walk_block", "Walk around the block", "Walk around the block", { kind: "wild", dur: 15, goal: "g_body", signal: { energy: 1 }, skipIf: ["market"], at: { morning: { rank: 13, needs: ["dressed"] } } }),
-    opt("park_walk", "Walk to the park", "Walk to the park", { kind: "wild", dur: 40, goal: "g_joy", horizon: "medium", demanding: true, dry: true, daylight: true, signal: { energy: 1, mood: 1 }, at: { afternoon: { rank: 3 } } }),
-    opt("coffee_light", "Have coffee somewhere with good light, in something you like", "Coffee out", { kind: "flirty", chance: 0.75, dur: 45, goal: "g_joy", signal: { mood: 1, social: 1 }, at: { afternoon: { rank: 4, needs: ["dressed"] } } }),
-    opt("tea_window", "Have tea by the window", "Tea by the window", { dur: 15, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { afternoon: { rank: 5 }, evening: { rank: 11 } } }),
+    opt("park_walk", "Walk to the park", "Walk to the park", { kind: "wild", dur: 40, goal: "g_joy", horizon: "medium", demanding: true, dry: true, daylight: true, signal: { energy: 1, mood: 1 }, gives: ["park"], at: { afternoon: { rank: 3 } } }),
+    opt("coffee_light", "Have coffee somewhere with good light, in something you like", "Coffee out", { kind: "flirty", chance: 0.75, dur: 45, goal: "g_joy", signal: { mood: 1, social: 1 }, gives: ["out"], at: { afternoon: { rank: 4, needs: ["dressed"] } } }),
+    opt("tea_window", "Have tea by the window", "Tea by the window", { dur: 15, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { afternoon: { rank: 5 }, evening: { rank: 11 }, night: { rank: 8 } } }),
     opt("walk_ten", "Go for a short walk, no destination", "Short walk", { kind: "wild", dur: 10, goal: "g_body", gentle: true, daylight: true, at: { afternoon: { rank: 6 } } }),
-    opt("lie_down_20", "Lie down for 20 minutes, no screen", "Lying down, no screen", { kind: "variation", dur: 20, goal: "g_rest", gentle: true, onlyLow: true, signal: { energy: -1, overwhelm: -1 }, at: { afternoon: { rank: 0 } } }),
+    opt("lie_down_20", "Lie down for 20 minutes, no screen", "Lying down, no screen", { kind: "variation", dur: 20, goal: "g_rest", gentle: true, onlyLow: true, signal: { energy: -1, overwhelm: -1 }, gives: ["rested"], at: { afternoon: { rank: 0 } } }),
     opt("prep_dinner", "Chop what you need for dinner", "Chopping for dinner", { kind: "variation", dur: 15, goal: "g_nutrition", at: { afternoon: { rank: 8 } } }),
-    opt("chicken_bowl", "Have the leftover chicken bowl", "Chicken bowl", { dur: 15, goal: "g_nutrition", gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 1 } } }),
-    opt("soup_bread", "Have soup and bread", "Soup and bread", { kind: "variation", dur: 20, goal: "g_nutrition", gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 2 } } }),
-    opt("new_recipe", "Cook something you haven't made before", "Cooking something new", { kind: "wild", dur: 45, goal: "g_joy", horizon: "medium", demanding: true, gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 3 } } }),
-    opt("lay_out", "Lay out tomorrow's clothes", "Laying out clothes", { dur: 10, goal: "g_admin", signal: { overwhelm: -1 }, at: { evening: { rank: 13 } } }),
+    opt("chicken_bowl", "Have the leftover chicken bowl", "Chicken bowl", { dur: 15, goal: "g_nutrition", gives: ["dinner"], skipIf: ["dinner", "cooking"], at: { evening: { rank: 1 } } }),
+    opt("soup_bread", "Have soup and bread", "Soup and bread", { kind: "variation", dur: 20, goal: "g_nutrition", gives: ["dinner"], skipIf: ["dinner", "cooking"], at: { evening: { rank: 2 } } }),
+    opt("new_recipe", "Cook something you haven't made before", "Cooking something new", { kind: "wild", dur: 2, goal: "g_joy", horizon: "medium", demanding: true, gives: ["cooking"], skipIf: ["dinner", "cooking"], at: { evening: { rank: 3 } } }),
+    opt("lay_out", "Lay out tomorrow's clothes", "Laying out clothes", { dur: 10, goal: "g_admin", signal: { overwhelm: -1 }, at: { evening: { rank: 13 }, night: { rank: 6 } } }),
     opt("evening_text", "Text someone you like. Make it a little bold.", "Texting someone you like", { kind: "flirty", chance: 0.8, dur: 5, goal: "g_joy", signal: { mood: 1, social: 1 }, at: { evening: { rank: 4 } } }),
     opt("good_thing", "Put on the thing you save for best", "Wearing the good thing", { kind: "flirty", chance: 0.8, dur: 10, goal: "g_joy", signal: { mood: 1 }, at: { evening: { rank: 6 } } }),
     opt("walk_after", "Go for a slow walk", "Walk after dinner", { kind: "wild", dur: 20, goal: "g_body", gentle: true, signal: { overwhelm: -1 }, at: { evening: { rank: 5, needs: ["dinner"] } } }),
     opt("call_friend", "Call someone you've been meaning to", "Calling a friend", { dur: 20, goal: "g_joy", signal: { social: 1 }, at: { evening: { rank: 7 } } }),
-    opt("clear_up", "Clear up the kitchen", "Clearing up", { dur: 15, goal: "g_admin", at: { evening: { rank: 8, needs: ["dinner"] } } }),
-    opt("bath", "Run a bath", "Having a bath", { kind: "variation", dur: 30, goal: "g_rest", gentle: true, signal: { energy: -1, overwhelm: -1 }, at: { evening: { rank: 9, needs: ["dinner"] } } }),
-    opt("journal_3", "Write three lines about today", "Writing three lines", { dur: 10, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { evening: { rank: 12 } } }),
+    opt("clear_up", "Clear up the kitchen", "Clearing up", { dur: 15, goal: "g_admin", at: { evening: { rank: 3.5, needs: ["dinner"] } } }),
+    opt("bath", "Run a bath", "Having a bath", { kind: "variation", dur: 30, goal: "g_rest", gentle: true, signal: { energy: -1, overwhelm: -1 }, gives: ["bathed"], at: { evening: { rank: 9, needs: ["dinner"] } } }),
+    opt("journal_3", "Write three lines about today", "Writing three lines", { dur: 10, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { evening: { rank: 12 }, night: { rank: 7 } } }),
     opt("bag_tomorrow", "Pack tomorrow's bag", "Packing tomorrow's bag", { dur: 10, goal: "g_admin", at: { evening: { rank: 14 } } }),
     opt("eat_before_out", "Eat something", "Eating before heading out", { dur: 10, goal: "g_nutrition", gives: ["fed"], skipIf: ["fed"], at: { before_event: { rank: 1 } } }),
     opt("bag_keys", "Gather your bag and keys", "Bag and keys", { kind: "variation", dur: 5, signal: { overwhelm: -1 }, at: { before_event: { rank: 2 } } }),
     opt("getting_ready", "Get ready", "Getting ready", { kind: "checklist", dur: 20, signal: { overwhelm: -1 }, steps: ["Dressed", "Keys", "Bag", "Phone charged"], gives: ["ready"], at: { before_event: { rank: 3 } } }),
-    opt("leave_early", "Leave ten minutes early", "Leaving early by bus", { kind: "variation", dur: 10, signal: { overwhelm: -1 }, at: { before_event: { rank: 4, needs: ["ready"] } } }),
-    opt("directions", "See directions to the appointment", "Heading to the appointment", { kind: "info", dur: 14, at: { during_event: { rank: 1 } } })
+    opt("leave_early", "Leave ten minutes early", "Leaving early by bus", { kind: "variation", dur: 10, signal: { overwhelm: -1 }, at: { before_event: { rank: 0.5, needs: ["ready"] } } }),
+    opt("leave_now", "Leave for the appointment", "Heading to the appointment", { kind: "info", dur: 14, gives: ["headed"], at: { during_event: { rank: 1 } } }),
+    opt("read_back", "Read it back and fix one thing", "Reading it back", { dur: 10, goal: "g_writing", at: { morning: { rank: 0.5, needs: ["wrote"] }, afternoon: { rank: 0.5, needs: ["wrote"] } } }),
+    opt("break_5", "Stand up and take a five-minute break", "Taking a break", { dur: 5, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { morning: { rank: 0.6, needs: ["wrote"] }, afternoon: { rank: 0.6, needs: ["wrote"] } } }),
+    opt("next_step", "Write down the next step", "Writing down the next step", { dur: 5, goal: "g_followthrough", at: { morning: { rank: 0.5, needs: ["started"] } } }),
+    opt("inbox_rest", "Archive what you don't need", "Archiving emails", { dur: 5, goal: "g_admin", at: { morning: { rank: 0.5, needs: ["mailed"] } } }),
+    opt("pin_sketch", "Pin it up where you can see it", "Pinning up the sketch", { dur: 3, goal: "g_creative", at: { morning: { rank: 0.5, needs: ["sketched"] }, afternoon: { rank: 0.5, needs: ["sketched"] } } }),
+    opt("line_liked", "Write down one line you liked", "Writing down a line", { dur: 3, goal: "g_rest", at: { morning: { rank: 0.5, needs: ["read"] }, afternoon: { rank: 0.5, needs: ["read"] }, evening: { rank: 0.5, needs: ["read"] } } }),
+    opt("park_sit", "Sit on a bench for five minutes", "Sitting in the park", { dur: 5, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { afternoon: { rank: 0.5, needs: ["park"] } } }),
+    opt("cafe_write", "Write in a notebook for ten minutes", "Writing at the café", { dur: 10, goal: "g_writing", at: { afternoon: { rank: 0.5, needs: ["out"] } } }),
+    opt("sit_up_water", "Sit up slowly and drink some water", "Water after resting", { dur: 3, goal: "g_rest", gentle: true, at: { afternoon: { rank: 0.5, needs: ["rested"] } } }),
+    opt("comfy_clothes", "Put on something comfortable", "Getting comfortable", { dur: 5, goal: "g_rest", gentle: true, at: { evening: { rank: 0.5, needs: ["bathed"] }, night: { rank: 0.5, needs: ["bathed"] } } }),
+    opt("recipe_risotto", "Make a mushroom risotto", "Mushroom risotto", { dur: 45, goal: "g_joy", exclusive: true, gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 0.1, needs: ["cooking"] } } }),
+    opt("recipe_curry", "Make a chickpea curry", "Chickpea curry", { dur: 40, goal: "g_joy", exclusive: true, gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 0.2, needs: ["cooking"] } } }),
+    opt("recipe_tray", "Roast a tray of vegetables with halloumi", "Roasted vegetables", { dur: 40, goal: "g_joy", exclusive: true, gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 0.3, needs: ["cooking"] } } }),
+    opt("recipe_pasta", "Make a lemon and garlic pasta", "Lemon and garlic pasta", { dur: 25, goal: "g_joy", exclusive: true, gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 0.4, needs: ["cooking"] } } }),
+    opt("recipe_noodles", "Make a miso noodle soup", "Miso noodle soup", { dur: 20, goal: "g_joy", exclusive: true, gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 0.5, needs: ["cooking"] } } }),
+    opt("silent_phone", "Put your phone on silent", "Phone on silent", { dur: 1, at: { during_event: { rank: 2, needs: ["headed"] } } }),
+    opt("phone_charge", "Put your phone on charge", "Phone on charge", { dur: 1, gives: ["charged"], at: { night: { rank: 1 } } }),
+    opt("wash_face", "Wash your face and brush your teeth", "Getting ready for bed", { dur: 10, goal: "g_body", gives: ["bedready"], at: { night: { rank: 2 } } }),
+    opt("set_alarm", "Set tomorrow's alarm", "Setting the alarm", { dur: 1, goal: "g_admin", at: { night: { rank: 3 } } }),
+    opt("read_bed", "Read in bed for 15 minutes", "Reading in bed", { dur: 15, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { night: { rank: 4, needs: ["bedready"] } } }),
+    opt("lights_out", "Turn the lights out", "Lights out", { dur: 1, gentle: true, gives: ["asleep"], at: { night: { rank: 5, needs: ["bedready"] } } }),
+    opt("breaths_3", "Take three slow breaths", "Slow breaths", { dur: 2, goal: "g_calm", gentle: true, signal: { overwhelm: -1 }, at: anywhere(90) }),
+    opt("water", "Drink a glass of water", "Water", { dur: 1, goal: "g_body", at: anywhere(91) }),
+    opt("window_minute", "Look out of the window for a minute", "Looking out of the window", { dur: 1, goal: "g_calm", gentle: true, at: anywhere(92) }),
+    opt("shoulders", "Roll your shoulders and unclench your jaw", "Loosening up", { dur: 1, goal: "g_body", gentle: true, at: anywhere(93) }),
+    opt("note_mind", "Write down one thing on your mind", "Writing down a thought", { dur: 2, goal: "g_calm", at: anywhere(94) }),
+    opt("step_outside", "Step outside for a minute", "Stepping outside", { dur: 3, goal: "g_body", daylight: true, at: anywhere(95) })
   ];
+
+  // Small things that fit anywhere. They only fill a screen up to its floor, so there is always something
+  // to choose without crowding a screen that already has real options.
+  ["breaths_3", "water", "window_minute", "shoulders", "note_mind", "step_outside"].forEach(function (id) {
+    OPTIONS.forEach(function (o) { if (o.id === id) { o.filler = true; } });
+  });
 
   // ---- the day's blocks, built from the calendar ----
   var BASE = [["morning", 450, 810], ["afternoon", 810, 1020], ["evening", 1020, 1200], ["night", 1200, 1439]];
@@ -133,7 +173,7 @@
 
   function pool(block, facts, opts, ctx) {
     var done = Object.keys(facts).filter(function (k) { return k.indexOf("did_") === 0; }).length;
-    if (done >= (opts.maxDone || 12)) { return []; }
+    if (done >= (opts.maxDone || 12) || facts.asleep) { return []; }
     var cap = capacity(opts), out = [];
     OPTIONS.forEach(function (o) {
       var at = o.at[block.type];
@@ -147,11 +187,13 @@
       if (cap < 0 ? o.demanding : o.onlyLow) { return; }
       out.push({ o: o, rank: at.rank + (cap < 0 && o.gentle ? -20 : 0) + (cap > 0 && o.demanding ? -2 : 0) });
     });
+    var focus = out.filter(function (x) { return x.o.exclusive; });
+    if (focus.length) { out = focus; }
     out.sort(function (a, b) { return a.rank - b.rank; });
     return out.map(function (x) { return x.o; });
   }
 
-  var BASE_COUNT = { morning: 3, afternoon: 4, evening: 3, before_event: 3, during_event: 1, night: 1 };
+  var BASE_COUNT = { morning: 3, afternoon: 4, evening: 3, before_event: 3, during_event: 1, night: 2 };
 
   // How many cards this screen shows: fewer when time is tight, energy is low or the night was short, or the user has already
   // done a few things in this block, and a little variety either way. Never more than four.
@@ -163,7 +205,7 @@
     if (cap > 0) { n += 1; }
     if (done >= 3) { n -= 1; }
     n += [-1, 0, 0, 1, 0][hash(ctx.day + "|" + key) % 5];
-    var floor = (block.type === "during_event" || block.type === "night") ? 1 : 2;
+    var floor = block.type === "during_event" ? 1 : 2;
     return Math.min(avail, 4, Math.max(floor, n));
   }
 
@@ -176,6 +218,15 @@
       if (o.kind === "flirty") { if (flirty) { continue; } flirty = true; }
       out.push(o);
     }
+    return out;
+  }
+
+  // Real options first, up to n. Fillers only bring a screen up to its floor.
+  function choose(cands, n, floor) {
+    var real = cands.filter(function (o) { return !o.filler; });
+    var fill = cands.filter(function (o) { return o.filler; });
+    var out = take(real, n);
+    if (out.length < floor) { out = out.concat(take(fill, floor - out.length)); }
     return out;
   }
 
@@ -218,11 +269,12 @@
       var cands = pool(block, facts, opts, ctx);
       var done = names.filter(function (k) { return k.indexOf("did_") === 0; }).length;
       var stem = "b" + bi + ".";
-      var first = take(cands, want(ctx, opts, block, done, stem + "0." + names.join("+"), cands.length));
+      var floor = block.type === "during_event" ? 1 : 2;
+      var first = choose(cands, want(ctx, opts, block, done, stem + "0." + names.join("+"), cands.length), floor);
       var seen = {};
       first.forEach(function (o) { seen[o.id] = true; });
       var rest = cands.filter(function (o) { return !seen[o.id]; });
-      var shown = offset === 0 ? first : take(rest, want(ctx, opts, block, done, stem + "1." + names.join("+"), rest.length));
+      var shown = offset === 0 ? first : choose(rest, want(ctx, opts, block, done, stem + "1." + names.join("+"), rest.length), floor);
       shown.forEach(useCard);
       nodes[key] = {
         title: block.title, type: block.type, window: [hhmm(block.s), hhmm(block.e)],

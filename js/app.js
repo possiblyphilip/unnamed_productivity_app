@@ -9,6 +9,11 @@
   function load(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 
+  // A refresh starts from scratch. Only the Google Calendar sign-in is kept.
+  try {
+    Object.keys(localStorage).forEach(function (k) { if (k.indexOf("cc.") === 0 && k !== "cc.gcal") { localStorage.removeItem(k); } });
+  } catch (e) { /* storage blocked */ }
+
   var INTEGRATIONS = [
     ["Schedule", [["gcal", "Google Calendar"], ["outlook", "Outlook"], ["acal", "Apple Calendar"]]],
     ["Messages", [["messages", "Messages"], ["gmail", "Gmail"], ["whatsapp", "WhatsApp"]]],
@@ -23,7 +28,7 @@
   var LENS_IDS = { sleep: true, moon: true, cycle: true };
   var DAY_MODES = [["sick", "Sick"], ["travel", "Travelling"], ["big", "Big day"], ["rough", "Rough day"]];
   var DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  var STOPS = [["8:10a", 490], ["11:40a", 700], ["2:10p", 850], ["6:10p", 1090], ["8:30p", 1230]];
+  var STOPS = [["8:10a", 490], ["11:40a", 700], ["12:40p", 760], ["2:10p", 850], ["6:10p", 1090], ["8:30p", 1230]];
   function quietCard(x) { return { id: "q_auto", option: "quiet", text: (x.view.node && x.view.node.quiet) || "Nothing needed right now.", tags: { kind: "quiet" }, signal: {} }; }
 
   var bundle = null;
@@ -37,9 +42,10 @@
   function history() { return baked.concat(offers); }
   var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false } }, load("cc.lenses", {}));
   var notes = load("cc.notes", []);
-  var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21 }, load("cc.test", {}));
+  var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true }, load("cc.test", {}));
   test.sleep = snapSleep(test.sleep);
-  var ui = { sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "" };
+  var ui = { sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false };
+  var holdTimer = null;
   var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], place: null, moon: Ctx.moonFor(new Date()) };
 
   // ---- time and context ----
@@ -157,7 +163,10 @@
     } else {
       title = v.node ? v.node.title : "Today";
       var a = S.activity;
-      if (a && x.m < a.until) { sub = "Now: " + a.label + (a.steps ? " (" + a.steps.join(", ").toLowerCase() + ")" : "") + ", until " + Model.clock(a.until) + "."; }
+      if (a && x.m < a.until) {
+        title = a.label;
+        sub = (a.steps ? a.steps.join(", ") + ". " : "") + "Until " + Model.clock(a.until) + ".";
+      }
       else if (a) { sub = "Last: " + a.label + "." + (v.skipped.length ? " Nothing picked since." : ""); }
       else if (v.skipped.length) { sub = "Nothing picked yet today."; }
       else { sub = v.id === bundle.root ? "Start of day." : "Nothing picked yet today."; }
@@ -171,6 +180,7 @@
     var v = x.view;
     if (S.dayMode) { return '<div class="card still">Nothing needed today.</div><div><button class="pill" data-act="enddaymode">End day mode</button></div>'; }
     if (!v.node) { return '<div class="card still">Nothing needed.</div>'; }
+    if (ui.hold) { return ""; }
     return '<div class="stack">' + cards.map(function (c) {
       if (c.tags && c.tags.kind === "quiet") { return '<div class="card still">' + esc(c.text) + "</div>"; }
       return '<button class="card" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
@@ -271,7 +281,7 @@
         '<div class="ctl"><span>Energy</span><select data-test="energy"><option value="normal"' + (test.energy === "normal" ? " selected" : "") + '>Normal</option><option value="low"' + (test.energy === "low" ? " selected" : "") + ">Low</option></select></div>" +
         '<div class="ctl"><span>Sleep last night: <b id="sleepv">' + hm(test.sleep) + '</b></span><input type="range" min="5" max="9" step="2" value="' + test.sleep + '" data-test="sleep" data-out="sleepv"><div class="ticks"><span>5h</span><span>7h</span><span>9h</span></div></div>' +
         '<div class="ctl"><span>Cycle day: <b id="cyclev">' + (test.cycleDay || "off") + '</b></span><input type="range" min="0" max="28" step="1" value="' + test.cycleDay + '" data-test="cycleDay" data-out="cyclev"></div>' +
-        '<div class="btns"><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
+        '<div class="btns"><label class="chk"><input type="checkbox" data-test="pause"' + (test.pause ? " checked" : "") + '> Pause 3 seconds after a pick</label><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
         "<p>Add #test to the address to bring these back.</p></div>";
     }
     return bar + drawer;
@@ -306,6 +316,7 @@
     S = { day: todayKey() };
     test.minutes = 490;
     ui.sheet = null; ui.noteSent = false; ui.draft = "";
+    clearTimeout(holdTimer); ui.hold = false;
   }
 
   function pick(id) {
@@ -323,6 +334,9 @@
     S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
     S.cursor = { node: child || x.view.id, setAt: x.m };
     saveAll();
+    clearTimeout(holdTimer);
+    ui.hold = !!test.pause;
+    if (ui.hold) { holdTimer = setTimeout(function () { ui.hold = false; render(); }, 3000); }
     render();
   }
 
@@ -351,6 +365,7 @@
   }
 
   app.addEventListener("click", function (e) {
+    if (ui.drawer && !e.target.closest(".drawer, .testbar")) { ui.drawer = false; render(); return; }
     var el = e.target.closest("[data-act]");
     if (!el || el.disabled) { return; }
     var act = el.getAttribute("data-act");
@@ -421,8 +436,9 @@
     var t = e.target;
     var key = t.getAttribute("data-test");
     if (key) {
-      var val = t.value;
-      if (key === "dow") { test.dow = val === "" ? null : Number(val); }
+      var val = t.type === "checkbox" ? t.checked : t.value;
+      if (key === "pause") { test.pause = !!val; }
+      else if (key === "dow") { test.dow = val === "" ? null : Number(val); }
       else if (key === "live") { test.live = val === "1"; if (test.live) { loadLive(); } }
       else if (key === "energy") { test.energy = val; }
       else { test[key] = Number(val); }

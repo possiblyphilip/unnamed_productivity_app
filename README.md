@@ -13,7 +13,7 @@ Open it on a phone. On iPhone: Share, then Add to Home Screen.
 - "Not this" is a quiet control with three tiers: a reroll, a typed note, and day modes.
 - The menu at the top left opens an Integrations list of every app, feed and device that could be connected. A few are live (Google Calendar, weather and location, moon). The app never shows what it has learned, the branches, or the picks; that stays in the model.
 
-A made-up 20-week pick history is built in, so learned chips and ordering show from the first open. Sleep is a three-way selector (5, 7 or 9 hours) and each setting is a different plan of the day.
+A refresh starts the day from scratch (only the Google Calendar sign-in is kept). A made-up 20-week pick history is built in, so learned chips and ordering show from the first open. Sleep is a three-way selector (5, 7 or 9 hours) and each setting is a different plan of the day.
 
 The red cross-hatched strip on the right is a test-only time scrubber. Add `#clean` to the address to hide it, `#test` to bring it back.
 
