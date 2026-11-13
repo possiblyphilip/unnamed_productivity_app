@@ -27,13 +27,18 @@
   function quietCard(x) { return { id: "q_auto", option: "quiet", text: (x.view.node && x.view.node.quiet) || "Nothing needed right now.", tags: { kind: "quiet" }, signal: {} }; }
 
   var bundle = null;
-  var planSig = "";
   var sess = null;
+  var sessions = {};
+  var precomputed = "";
   var S = load("cc.state", {});
-  var offers = load("cc.offers", []);
+  var offers = load("cc.offers", []).filter(function (o) { return o.source !== "sample"; });
+  // A made-up history is baked in, so learned chips and ordering show from the first open.
+  var baked = Sim.demoHistory();
+  function history() { return baked.concat(offers); }
   var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false } }, load("cc.lenses", {}));
   var notes = load("cc.notes", []);
-  var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 5.67, cycleDay: 21 }, load("cc.test", {}));
+  var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21 }, load("cc.test", {}));
+  test.sleep = snapSleep(test.sleep);
   var ui = { sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "" };
   var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], place: null, moon: Ctx.moonFor(new Date()) };
 
@@ -43,7 +48,8 @@
   function nowMin() { return test.minutes !== null ? test.minutes : realMinutes(); }
   function dowNow() { return test.dow !== null ? test.dow : new Date().getDay(); }
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-  function hm(h) { var t = Math.round(h * 60); return Math.floor(t / 60) + "h " + (t % 60) + "m"; }
+  function hm(h) { var t = Math.round(h * 60), m = t % 60; return Math.floor(t / 60) + "h" + (m ? " " + m + "m" : ""); }
+  function snapSleep(h) { return h < 6 ? 5 : h < 8 ? 7 : 9; }
 
   function ctxNow() {
     if (!test.live) {
@@ -69,13 +75,26 @@
     return "Cycle day " + test.cycleDay;
   }
 
+  // One plan per sleep band (about 5, 7 or 9 hours), kept for the context it was made for. Switching
+  // between them is instant, and the new plan restores the node the user was on.
+  function planFor(c, sleep) {
+    var sig = [c.day, test.live ? 1 : 0, test.energy, sleep, live.weather.length, live.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
+    if (!sessions[sig]) { sessions[sig] = Planner.session(c, { energy: test.energy, sleep: sleep }); }
+    return sessions[sig];
+  }
+
+  function precompute() {
+    var c = ctxNow();
+    [5, 7, 9].forEach(function (h) { var s = planFor(c, h); s.expand(s.bundle.root, 2); });
+  }
+
   function compute() {
     var m = nowMin();
     var c = ctxNow();
     if (S.day !== todayKey()) { S = { day: todayKey() }; }
     if (S.cursor && S.cursor.setAt > m) { S = { day: S.day, dayMode: S.dayMode }; }
-    var sig = [c.day, test.live ? 1 : 0, test.energy, live.weather.length, live.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
-    if (sig !== planSig) { sess = Planner.session(c, { energy: test.energy }); bundle = sess.bundle; planSig = sig; }
+    sess = planFor(c, test.sleep);
+    bundle = sess.bundle;
     var cursor = S.cursor || { node: bundle.root, setAt: 0 };
     if (cursor.node && !bundle.nodes[cursor.node]) { sess.restore(cursor.node); }
     var view = Model.advance(bundle, cursor, m, sess.ensure);
@@ -87,7 +106,7 @@
   function cardsFor(x) {
     var cards = x.view.cards.slice();
     if (!cards.length) { return [quietCard(x)]; }
-    var p = Learner.tilt(offers, x.slice, x.states);
+    var p = Learner.tilt(history(), x.slice, x.states);
     if (p === null) { return cards; }
     var activeFirst = p >= 0.5;
     return cards.map(function (c, i) { return { c: c, i: i }; }).sort(function (a, b) {
@@ -120,7 +139,7 @@
   function lensChips(x) {
     var hidden = {};
     Object.keys(lenses).forEach(function (id) { if (lenses[id].hidden) { hidden[id] = true; } });
-    return Learner.chipsFor(offers, x.slice, x.states, hidden, 3).map(function (f) {
+    return Learner.chipsFor(history(), x.slice, x.states, hidden, 3).map(function (f) {
       return f.kind === "single" ? lensText(f.lens, x.c) : f.lens.map(function (id) { return lensText(id, x.c); }).join(" · ");
     });
   }
@@ -250,9 +269,9 @@
         '<div class="ctl"><span>Day of week</span><select data-test="dow">' + dowOpts + "</select></div>" +
         '<div class="ctl"><span>Context</span><select data-test="live"><option value="0"' + (!test.live ? " selected" : "") + '>Sample day (Seattle, invented)</option><option value="1"' + (test.live ? " selected" : "") + ">Live weather and calendar</option></select></div>" +
         '<div class="ctl"><span>Energy</span><select data-test="energy"><option value="normal"' + (test.energy === "normal" ? " selected" : "") + '>Normal</option><option value="low"' + (test.energy === "low" ? " selected" : "") + ">Low</option></select></div>" +
-        '<div class="ctl"><span>Sleep last night: <b id="sleepv">' + hm(test.sleep) + '</b></span><input type="range" min="4" max="9" step="0.1" value="' + test.sleep + '" data-test="sleep" data-out="sleepv"></div>' +
+        '<div class="ctl"><span>Sleep last night: <b id="sleepv">' + hm(test.sleep) + '</b></span><input type="range" min="5" max="9" step="2" value="' + test.sleep + '" data-test="sleep" data-out="sleepv"><div class="ticks"><span>5h</span><span>7h</span><span>9h</span></div></div>' +
         '<div class="ctl"><span>Cycle day: <b id="cyclev">' + (test.cycleDay || "off") + '</b></span><input type="range" min="0" max="28" step="1" value="' + test.cycleDay + '" data-test="cycleDay" data-out="cyclev"></div>' +
-        '<div class="btns"><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="loadsample">Load 20 weeks of made-up picks</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
+        '<div class="btns"><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
         "<p>Add #test to the address to bring these back.</p></div>";
     }
     return bar + drawer;
@@ -270,6 +289,7 @@
       current = x;
     }
     app.innerHTML = html + menuHtml();
+    if (bundle && precomputed !== sess && ui.screen === "today") { precomputed = sess; setTimeout(precompute, 30); }
   }
   var current = null;
 
@@ -282,7 +302,7 @@
   function replayDay() {
     var start = new Date();
     start.setHours(0, 0, 0, 0);
-    offers = offers.filter(function (o) { return o.source === "sample" || o.t < start.getTime(); });
+    offers = offers.filter(function (o) { return o.t < start.getTime(); });
     S = { day: todayKey() };
     test.minutes = 490;
     ui.sheet = null; ui.noteSent = false; ui.draft = "";
@@ -362,7 +382,6 @@
     }
     else if (act === "drawer") { ui.drawer = !ui.drawer; }
     else if (act === "resetday") { replayDay(); }
-    else if (act === "loadsample") { offers = Sim.demoHistory(); }
     else if (act === "clearhistory") { offers = []; }
     else if (act === "hidetest") { test.on = false; ui.drawer = false; }
     else if (act === "locate") { loadLive(); ui.calMsg = "Asking for your location."; }

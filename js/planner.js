@@ -23,6 +23,17 @@
     return Math.abs(h);
   }
 
+  // Last night's sleep in three bands: about 5 hours, 7 or 9.
+  function sleepBand(h) { return h == null ? 7 : h < 6 ? 5 : h < 8 ? 7 : 9; }
+
+  // How much the day can take, from energy and sleep. Below zero the day is gentler (no demanding
+  // options, gentle ones first, fewer cards). Above zero there is room for more. Low energy after a long
+  // night comes out as an ordinary day.
+  function capacity(opts) {
+    var b = sleepBand(opts.sleep);
+    return (opts.energy === "low" ? -1 : 0) + (b === 5 ? -1 : b === 9 ? 1 : 0);
+  }
+
   function opt(id, text, label, x) { x.id = id; x.text = text; x.label = label; return x; }
 
   var OPTIONS = [
@@ -122,7 +133,7 @@
   function pool(block, facts, opts, ctx) {
     var done = Object.keys(facts).filter(function (k) { return k.indexOf("did_") === 0; }).length;
     if (done >= (opts.maxDone || 12)) { return []; }
-    var low = opts.energy === "low", out = [];
+    var cap = capacity(opts), out = [];
     OPTIONS.forEach(function (o) {
       var at = o.at[block.type];
       if (!at || facts["did_" + o.id]) { return; }
@@ -132,8 +143,8 @@
       if (o.dry && !dryOk(ctx, block)) { return; }
       if (o.daylight && !lightOk(ctx, block)) { return; }
       if (o.chance && hash(ctx.day + "|" + block.type + "|" + o.id) % 100 >= Math.round(o.chance * 100)) { return; }
-      if (low ? o.demanding : o.onlyLow) { return; }
-      out.push({ o: o, rank: at.rank + (low && o.gentle ? -20 : 0) });
+      if (cap < 0 ? o.demanding : o.onlyLow) { return; }
+      out.push({ o: o, rank: at.rank + (cap < 0 && o.gentle ? -20 : 0) + (cap > 0 && o.demanding ? -2 : 0) });
     });
     out.sort(function (a, b) { return a.rank - b.rank; });
     return out.map(function (x) { return x.o; });
@@ -141,12 +152,14 @@
 
   var BASE_COUNT = { morning: 3, afternoon: 4, evening: 3, before_event: 3, during_event: 1, night: 1 };
 
-  // How many cards this screen shows: fewer when time is tight, energy is low, or the user has already
+  // How many cards this screen shows: fewer when time is tight, energy is low or the night was short, or the user has already
   // done a few things in this block, and a little variety either way. Never more than four.
   function want(ctx, opts, block, done, key, avail) {
     if (!avail) { return 0; }
     var n = BASE_COUNT[block.type] || 3;
-    if (opts.energy === "low") { n -= 1; }
+    var cap = capacity(opts);
+    if (cap < 0) { n += cap; }
+    if (cap > 0) { n += 1; }
     if (done >= 3) { n -= 1; }
     n += [-1, 0, 0, 1, 0][hash(ctx.day + "|" + key) % 5];
     var floor = (block.type === "during_event" || block.type === "night") ? 1 : 2;
@@ -254,7 +267,7 @@
     var root = node(0, {}, 0);
     var bundle = {
       schema: "bundle/0.2", bundle_id: "demo-" + ctx.day, root: root, cards: cards, nodes: nodes,
-      assumptions: { day: ctx.day, energy: opts.energy || "normal", blocks: blocks.map(function (b) { return b.type + " " + hhmm(b.s) + "-" + hhmm(b.e); }) }
+      assumptions: { day: ctx.day, energy: opts.energy || "normal", sleep: sleepBand(opts.sleep), blocks: blocks.map(function (b) { return b.type + " " + hhmm(b.s) + "-" + hhmm(b.e); }) }
     };
     return { bundle: bundle, ensure: ensure, expand: expand, restore: restore };
   }
@@ -266,5 +279,5 @@
     return s.bundle;
   }
 
-  return { plan: plan, session: session, OPTIONS: OPTIONS, makeBlocks: makeBlocks, hash: hash };
+  return { plan: plan, session: session, OPTIONS: OPTIONS, makeBlocks: makeBlocks, hash: hash, sleepBand: sleepBand };
 });

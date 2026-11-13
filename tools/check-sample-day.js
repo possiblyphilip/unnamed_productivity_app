@@ -93,7 +93,13 @@ const allRain = Planner.plan(ctxWith({ weather: [{ from: "00:00", to: "23:59", s
 checkTree("sample", normal);
 checkTree("low energy", low);
 checkTree("no events", noEvents);
+const sleep5 = Planner.plan(Sample.context, { energy: "normal", sleep: 5 });
+const sleep7 = Planner.plan(Sample.context, { energy: "normal", sleep: 7 });
+const sleep9 = Planner.plan(Sample.context, { energy: "normal", sleep: 9 });
+const lowSleep9 = Planner.plan(Sample.context, { energy: "low", sleep: 9 });
 checkTree("all rain", allRain);
+checkTree("sleep 5", sleep5);
+checkTree("sleep 9", sleep9);
 
 // the cards on a screen, plus the "show different options" page
 function screen(bundle, picks, now) {
@@ -151,6 +157,26 @@ expect("evening starts with dinner", screen(normal, [], "18:00"), { any: [["chic
   Object.keys(low.nodes).forEach(function (id) { low.nodes[id].cards.forEach(function (c) { if (OPT[c].demanding) { hits.push(c); } }); });
   if (hits.length) { bad("low energy offers demanding options: " + hits.slice(0, 5).join(",")); }
   console.log((hits.length ? "FAIL " : "ok   ") + "low energy never offers a demanding option");
+})();
+
+// sleep: three plans, a gentler one after about 5 hours, the ordinary one at 7, more room at 9
+(function () {
+  const rows = [];
+  function row(name, ok, detail) { if (!ok) { bad("sleep: " + name + " (" + detail + ")"); } rows.push((ok ? "ok   " : "FAIL ") + name + "  ->  " + detail); }
+  const hitsDemanding = function (b) { const h = []; Object.keys(b.nodes).forEach(function (id) { b.nodes[id].cards.forEach(function (x) { if (OPT[x].demanding) { h.push(x); } }); }); return h; };
+  const d5 = hitsDemanding(sleep5);
+  row("5 hours: nothing demanding is offered anywhere", d5.length === 0, d5.length ? d5.slice(0, 3).join(",") : "none");
+  const a5 = screen(sleep5, [], "14:10").cards;
+  row("5 hours: the afternoon starts with lying down", a5[0] === "lie_down_20", a5.join(","));
+  const m9 = screen(sleep9, ["coffee_window"], "08:10");
+  row("9 hours: writing is on the first screen after coffee", m9.cards.indexOf("write_25") !== -1, m9.cards.join(","));
+  const m7 = screen(sleep7, ["coffee_window"], "08:10");
+  row("7 hours: the same morning as the default plan", JSON.stringify(m7.cards) === JSON.stringify(screen(normal, ["coffee_window"], "08:10").cards) && Object.keys(sleep7.nodes).length === Object.keys(normal.nodes).length, m7.cards.join(","));
+  const same = JSON.stringify(screen(lowSleep9, [], "14:10").cards) === JSON.stringify(screen(normal, [], "14:10").cards);
+  row("low energy after 9 hours of sleep is an ordinary day", same, screen(lowSleep9, [], "14:10").cards.join(","));
+  const avg = function (b) { let t = 0, k = 0; Object.keys(b.nodes).forEach(function (id) { const n = b.nodes[id].cards.length; if (n) { t += n; k++; } }); return t / k; };
+  row("more cards after a long night, fewer after a short one", avg(sleep9) > avg(normal) && avg(normal) > avg(sleep5), avg(sleep5).toFixed(2) + " < " + avg(normal).toFixed(2) + " < " + avg(sleep9).toFixed(2) + " cards a screen");
+  rows.forEach(function (r) { console.log(r); });
 })();
 
 // after dinner there is plenty to choose from
