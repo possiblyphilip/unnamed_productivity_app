@@ -406,7 +406,7 @@
   if (location.hash === "#clean") { test.on = false; }
   if (location.hash === "#test") { test.on = true; }
 
-  fetch("fixtures/sample-day.json").then(function (r) { return r.json(); }).then(function (b) {
+  fetch("fixtures/sample-day.json?v=7").then(function (r) { return r.json(); }).then(function (b) {
     bundle = b;
     if (test.live) { loadLive(); }
     render();
