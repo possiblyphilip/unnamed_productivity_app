@@ -108,7 +108,7 @@ Three bands. Top: the node `title` plus a line about the last choice, built from
 
 Cards are chosen by tapping or by swiping right: the other cards fade out, the pick moves up into the title, and three seconds later the next set fades in. Swiping left is an active rejection. A kind question appears ("Can you tell me more about that, or are you just not feeling it?") with two answers: a few words, or just not feeling it. Either way the card slides away and the screen is replaced by a new set. Arrow keys do the same on a focused card.
 
-"Not this" is one quiet control in the top band. It opens a sheet with three tiers: show different options (one reroll per node, a daily cap, and a third reroll in a day goes to the note sheet), tell it something (a one-way note, typed first, voice later, capped at two minutes), and today is off-plan (sick, travelling, big day, rough day). Day modes end at midnight unless the user ends them sooner.
+There is no separate "Not this" control: turning a card down is the swipe left above. Two app-level actions live in the left menu: Tell it something (a one-way note, typed first, voice later, capped at two minutes) and Off-plan today (sick, travelling, big day, rough day). Day modes end at midnight unless the user ends them sooner.
 
 ## Lenses
 
@@ -158,7 +158,7 @@ No setting gives both fast detection and a low false-finding rate. Narrow slices
 ### Using relevance
 
 - **Planner:** option score is goal fit + state fit + novelty + cooldown + the sum of learned lift for this slice, per lens and per qualifying pair. A lens with no evidence contributes about nothing. `fits` on an option (a map of lens to the states it suits, for example `{ "moon": { "new": 1 } }`) is an authored hint used only until learned lift exists.
-- **Bottom band:** operational context always appears when it applies (an appointment in 50 minutes, rain). Lens context appears only when its evidence for the current slice passes the threshold, up to three chips, strongest first. If sleep predicts coffee vs running on Saturday mornings but not Monday to Friday, the sleep chip shows on Saturday morning and not on weekdays. A pair chip ("Short night, slower phase") appears only when the pair predicts better than either alone. `hidden` lenses never show chips.
+- **Bottom band:** operational context always appears when it applies (an appointment in 50 minutes, rain). Lens context appears only when its evidence for the current slice passes the threshold, up to three chips, strongest first. If sleep predicts coffee vs running on Saturday mornings but not Monday to Friday, the sleep chip shows on Saturday morning and not on weekdays. A pair chip ("Short night, slower phase") appears only when the pair predicts better than either alone. `hidden` lenses never show chips. Chips are consolidated so the band stays to about four: the practical facts share one chip, and lenses are grouped (sleep with the fitness tracker, moon with zodiac, cycle on its own).
 - **Wording:** plain facts ("Slept 5h 40m", "Waxing crescent"). No "your lens", no interpretation, no promise.
 - **Nothing learned is listed.** The app never shows what it has noticed about the user, the branches, or the picks. A chip is the only place a learned pattern surfaces, and only where it applies. Lenses are switched on or off, and hidden or shown, from the Integrations list.
 - **`why`** (shown only if asked) states the pattern as a fact: "Short nights tend to go with slower picks on weekend mornings."

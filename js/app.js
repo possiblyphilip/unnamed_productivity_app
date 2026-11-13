@@ -159,29 +159,37 @@
     return out;
   }
 
-  // One short chip per lens, to hint at what could sit here. Patterns the app has learned come first; the
-  // rest are ambient, one line per lens, rotating through the day. Lenses switched off or hidden never show.
+  // Context is consolidated into a few chips. Patterns the app has learned come first. The rest are one line
+  // per lens, rotating through the day, grouped: sleep with the fitness tracker, cycle on its own, moon with
+  // zodiac. Lenses switched off or hidden never show.
   var LENS_ORDER = ["sleep", "cycle", "moon", "zodiac", "fitness"];
+  var LENS_GROUPS = [["sleep", "fitness"], ["cycle"], ["moon", "zodiac"]];
   function lensChips(x) {
-    var hidden = {}, taken = {}, out = [];
+    var hidden = {}, learned = {}, out = [];
     Object.keys(lenses).forEach(function (id) { if (lenses[id].hidden || !lenses[id].enabled) { hidden[id] = true; } });
     Learner.chipsFor(history(), x.slice, x.states, hidden, 3).forEach(function (f) {
-      var ids = f.kind === "single" ? [f.lens] : f.lens;
-      ids.forEach(function (id) { taken[id] = true; });
-      out.push(ids.map(function (id) { return lensText(id, x.c); }).join(" · "));
+      if (f.kind === "pair") {
+        out.push(f.lens.map(function (id) { return lensText(id, x.c); }).join(" · "));
+        f.lens.forEach(function (id) { learned[id] = "pair"; });
+      } else { learned[f.lens] = true; }
     });
     var hour = Math.floor(x.m / 30);
-    function add(id, options) {
-      if (hidden[id] || taken[id] || !options.length) { return; }
-      taken[id] = true;
-      out.push(options[(hour + LENS_ORDER.indexOf(id)) % options.length]);
-    }
-    add("sleep", ["Slept " + hm(test.sleep)]);
-    add("cycle", test.cycleDay > 0 ? [lensText("cycle", x.c)] : []);
-    add("moon", [x.c.moon.name]);
-    add("zodiac", x.c.moon.sign ? ["Moon in " + x.c.moon.sign, sunSign(x.c.day) + " season"] : []);
-    add("fitness", fitnessLines(x));
-    return out.slice(0, 5);
+    function rotate(id, options) { return options.length ? options[(hour + LENS_ORDER.indexOf(id)) % options.length] : null; }
+    var texts = {
+      sleep: "Slept " + hm(test.sleep),
+      cycle: test.cycleDay > 0 ? lensText("cycle", x.c) : null,
+      moon: x.c.moon.name,
+      zodiac: x.c.moon.sign ? rotate("zodiac", ["Moon in " + x.c.moon.sign, sunSign(x.c.day) + " season"]) : null,
+      fitness: rotate("fitness", fitnessLines(x))
+    };
+    var groups = [];
+    LENS_GROUPS.forEach(function (ids) {
+      var parts = ids.filter(function (id) { return !hidden[id] && texts[id] && learned[id] !== "pair"; });
+      if (!parts.length) { return; }
+      groups.push({ text: parts.map(function (id) { return texts[id]; }).join(" · "), learned: parts.some(function (id) { return learned[id] === true; }) });
+    });
+    groups.sort(function (p, q) { return (q.learned ? 1 : 0) - (p.learned ? 1 : 0); });
+    return out.concat(groups.map(function (g) { return g.text; })).slice(0, 4);
   }
 
   // ---- rendering ----
@@ -205,7 +213,7 @@
       else { sub = v.id === bundle.root ? "Start of day." : ""; }
     }
     return '<header class="top"><div class="row">' + hamburger() + '<h1' + (ui.titleNew ? ' class="new"' : '') + '>' + esc(title) + '</h1>' +
-      '<button class="quiet" data-act="menu">Not this</button></div>' +
+      '</div>' +
       '<p class="sub">' + esc(sub) + "</p></header>";
   }
 
@@ -237,29 +245,16 @@
   }
 
   function bottomHtml(x) {
-    var chips = operational(x).slice(0, 2).map(function (t) { return '<span class="chip">' + esc(t) + "</span>"; })
+    var ops = operational(x).slice(0, 2);
+    var chips = (ops.length ? ['<span class="chip">' + esc(ops.join(" \u00b7 ")) + "</span>"] : [])
       .concat(lensChips(x).map(function (t) { return '<span class="chip lens">' + esc(t) + "</span>"; }));
     return '<footer class="bottom">' + chips.join("") + "</footer>";
-  }
-
-  function rerollState(x) {
-    var n = x.view.node;
-    if (!n || !n.reroll || S.dayMode) { return "Not available on this screen"; }
-    if ((S.rerolls || {})[x.view.id] >= 1) { return "Already used on this screen"; }
-    if ((S.rerollsToday || 0) >= 3) { return "That's three today. Tell it what you're after instead."; }
-    return "";
   }
 
   function sheetHtml(x) {
     if (!ui.sheet) { return ""; }
     var body;
-    if (ui.sheet === "menu") {
-      var why = rerollState(x);
-      body = "<h2>Not this</h2>" +
-        '<button class="row-btn" data-act="reroll"' + (why ? " disabled" : "") + ">Show different options<small>" + esc(why || "One per screen") + "</small></button>" +
-        '<button class="row-btn" data-act="notesheet">Tell it something<small>Typed, one way, up to 1,000 characters</small></button>' +
-        '<button class="row-btn" data-act="daysheet">Today is off-plan<small>Sick, travelling, a big day, a rough one</small></button>';
-    } else if (ui.sheet === "note") {
+    if (ui.sheet === "note") {
       body = "<h2>Tell it something</h2>" +
         (ui.noteSent
           ? '<p style="margin:0">Got it.</p><p class="note-line" style="color:var(--hatch)">Test build: saved on this device only. No planner is connected yet.</p>'
@@ -313,6 +308,8 @@
     return '<button type="button" class="scrim" data-act="navmenu" aria-label="Close menu"></button>' +
       '<nav class="menu" aria-label="Menu"><button type="button" class="hamburger" data-act="navmenu" aria-label="Close menu"><span></span><span></span><span></span></button>' +
       '<p class="horizon">Unconscious</p>' + item("today", "Today") + item("integrations", "Integrations") + item("install", "Install help") +
+      '<button type="button" class="item" data-act="notesheet">Tell it something</button>' +
+      '<button type="button" class="item" data-act="daysheet">Off-plan today</button>' +
       (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
       (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
@@ -564,18 +561,6 @@
     else if (e.key === "ArrowLeft") { e.preventDefault(); startReject(el.getAttribute("data-id")); }
   });
 
-  function reroll() {
-    var x = compute();
-    if (rerollState(x)) { return; }
-    S.rerolls = S.rerolls || {};
-    S.rerolls[x.view.id] = (S.rerolls[x.view.id] || 0) + 1;
-    S.rerollsToday = (S.rerollsToday || 0) + 1;
-    S.cursor = { node: x.view.node.children.reroll, setAt: x.m };
-    ui.sheet = null;
-    saveAll();
-    render();
-  }
-
   function loadLive() {
     live.moon = Ctx.moonFor(new Date());
     Ctx.locate().then(function (place) {
@@ -595,14 +580,12 @@
     if (!el || el.disabled) { return; }
     var act = el.getAttribute("data-act");
     if (act === "pick") { pick(el.getAttribute("data-id"), "tap"); return; }
-    if (act === "reroll") { reroll(); return; }
     if (act === "rejectmore") { if (ui.reject) { ui.reject.step = "more"; render(); } return; }
     if (act === "rejectquiet") { doReject("not_feeling_it", ""); return; }
     if (act === "rejectsend") { var why = ui.draft.trim(); if (why) { doReject("more", why); } return; }
-    if (act === "menu") { ui.sheet = "menu"; }
-    else if (act === "closesheet") { ui.sheet = null; ui.noteSent = false; ui.reject = null; }
-    else if (act === "notesheet") { ui.sheet = "note"; ui.noteSent = false; }
-    else if (act === "daysheet") { ui.sheet = "day"; }
+    if (act === "closesheet") { ui.sheet = null; ui.noteSent = false; ui.reject = null; }
+    else if (act === "notesheet") { ui.sheet = "note"; ui.noteSent = false; ui.menu = false; ui.screen = "today"; }
+    else if (act === "daysheet") { ui.sheet = "day"; ui.menu = false; ui.screen = "today"; }
     else if (act === "daymode") {
       var mode = el.getAttribute("data-mode");
       S.dayMode = { mode: mode, label: DAY_MODES.filter(function (d) { return d[0] === mode; })[0][1] };
