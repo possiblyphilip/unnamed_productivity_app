@@ -10,7 +10,7 @@
       place: { band: "Seattle, WA" },
       sunrise: "07:05",
       sunset: "16:46",
-      moon: { phase: "waxing crescent" },
+      moon: { phase: "waxing crescent", sign: "Libra" },
       weather: [
         { from: "00:00", to: "13:40", sky: "rain" },
         { from: "13:40", to: "16:30", sky: "dry" },

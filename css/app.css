@@ -39,6 +39,7 @@ button.card:focus-visible, .pill:focus-visible, .row-btn:focus-visible, .integ:f
 .empty { text-align: center; color: var(--soft); margin: 0; }
 
 .bottom { padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); display: flex; flex-wrap: wrap; gap: 6px; min-height: 58px; align-content: flex-start; }
+.chip.lens { background: transparent; border: 1px solid rgba(247, 244, 240, 0.4); }
 .chip { font-size: 0.85rem; background: rgba(247, 244, 240, 0.18); color: var(--paper); border-radius: 999px; padding: 3px 11px; }
 
 .scrim { position: absolute; inset: 0; z-index: 20; border: 0; background: rgba(40, 50, 45, 0.45); }

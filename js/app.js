@@ -18,14 +18,14 @@
     ["Schedule", [["gcal", "Google Calendar"], ["outlook", "Outlook"], ["acal", "Apple Calendar"]]],
     ["Messages", [["messages", "Messages"], ["gmail", "Gmail"], ["whatsapp", "WhatsApp"]]],
     ["Social and inspiration", [["instagram", "Instagram"], ["pinterest", "Pinterest boards"]]],
-    ["Wearables and hardware", [["sleep", "Sleep hours"], ["oura", "Oura"], ["garmin", "Garmin"], ["whoop", "Whoop"], ["fitbit", "Fitbit"], ["applehealth", "Apple Health"], ["healthconnect", "Health Connect"], ["withings", "Withings scale"], ["eightsleep", "Eight Sleep"], ["dexcom", "Dexcom glucose"]]],
+    ["Wearables and hardware", [["sleep", "Sleep hours"], ["fitness", "Fitness tracker"], ["oura", "Oura"], ["garmin", "Garmin"], ["whoop", "Whoop"], ["fitbit", "Fitbit"], ["applehealth", "Apple Health"], ["healthconnect", "Health Connect"], ["withings", "Withings scale"], ["eightsleep", "Eight Sleep"], ["dexcom", "Dexcom glucose"]]],
     ["Nutrition and training", [["mfp", "MyFitnessPal"], ["cronometer", "Cronometer"], ["strava", "Strava"]]],
     ["Cycle", [["cycle", "Cycle days"], ["flo", "Flo"], ["clue", "Clue"], ["naturalcycles", "Natural Cycles"]]],
-    ["Sky and place", [["weather", "Weather and location"], ["moon", "Moon"], ["astrology", "Astrology"], ["transit", "Transit"]]],
+    ["Sky and place", [["weather", "Weather and location"], ["moon", "Moon"], ["zodiac", "Zodiac"], ["transit", "Transit"]]],
     ["Notes and files", [["drive", "Google Drive"], ["notion", "Notion"], ["applenotes", "Apple Notes"]]],
     ["Focus", [["screentime", "Screen Time"], ["focusmodes", "Focus modes"], ["wellbeing", "Digital Wellbeing"]]]
   ];
-  var LENS_IDS = { sleep: true, moon: true, cycle: true };
+  var LENS_IDS = { sleep: true, moon: true, cycle: true, zodiac: true, fitness: true };
   var DAY_MODES = [["sick", "Sick"], ["travel", "Travelling"], ["big", "Big day"], ["rough", "Rough day"]];
   var DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var STOPS = [["8:10a", 490], ["11:40a", 700], ["12:40p", 760], ["2:10p", 850], ["6:10p", 1090], ["8:30p", 1230]];
@@ -40,7 +40,7 @@
   // A made-up history is baked in, so learned chips and ordering show from the first open.
   var baked = Sim.demoHistory();
   function history() { return baked.concat(offers); }
-  var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false } }, load("cc.lenses", {}));
+  var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false }, zodiac: { enabled: true, hidden: false }, fitness: { enabled: true, hidden: false } }, load("cc.lenses", {}));
   var notes = load("cc.notes", []);
   var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true, auto: true }, load("cc.test", {}));
   test.sleep = snapSleep(test.sleep);
@@ -61,11 +61,11 @@
   function ctxNow() {
     if (!test.live) {
       var c = Sample.context;
-      return { day: c.day, weather: c.weather, sunrise: c.sunrise, sunset: c.sunset, calendar: c.calendar, moon: { name: cap(c.moon.phase), group: Learner.moonGroup(c.moon.phase) } };
+      return { day: c.day, weather: c.weather, sunrise: c.sunrise, sunset: c.sunset, calendar: c.calendar, moon: { name: cap(c.moon.phase), group: Learner.moonGroup(c.moon.phase), sign: c.moon.sign } };
     }
     var d = new Date();
     var day = d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate();
-    return { day: day, weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar, moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation) } };
+    return { day: day, weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar, moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation), sign: live.moon.sign } };
   }
 
   function lensStates(c) {
@@ -76,10 +76,26 @@
     return s;
   }
 
+  var SUN_SIGNS = [["Capricorn", 1, 19], ["Aquarius", 2, 18], ["Pisces", 3, 20], ["Aries", 4, 19], ["Taurus", 5, 20], ["Gemini", 6, 20], ["Cancer", 7, 22], ["Leo", 8, 22], ["Virgo", 9, 22], ["Libra", 10, 22], ["Scorpio", 11, 21], ["Sagittarius", 12, 21], ["Capricorn", 12, 31]];
+  function sunSign(day) {
+    var p = String(day).split("-"), mo = Number(p[1]), d = Number(p[2]);
+    for (var i = 0; i < SUN_SIGNS.length; i++) { if (mo < SUN_SIGNS[i][1] || (mo === SUN_SIGNS[i][1] && d <= SUN_SIGNS[i][2])) { return SUN_SIGNS[i][0]; } }
+    return "Capricorn";
+  }
+
   function lensText(id, c) {
     if (id === "sleep") { return "Slept " + hm(test.sleep); }
     if (id === "moon") { return c.moon.name; }
-    return "Cycle day " + test.cycleDay;
+    return cap(Learner.cyclePhase(test.cycleDay)) + " phase, day " + test.cycleDay;
+  }
+
+  // Invented tracker readings that move with the sleep setting and the time of day.
+  function fitnessLines(x) {
+    var band = Planner.sleepBand(test.sleep);
+    var lines = ["Readiness " + { 5: 61, 7: 78, 9: 89 }[band], "Resting heart rate 58", "HRV " + { 5: 41, 7: 54, 9: 63 }[band]];
+    var steps = Math.round(Math.max(0, x.m - 420) * 0.75) * 10;
+    if (steps >= 200) { lines.push(steps.toLocaleString("en-US") + " steps so far"); }
+    return lines;
   }
 
   // One plan per sleep band (about 5, 7 or 9 hours), kept for the context it was made for. Switching
@@ -143,12 +159,29 @@
     return out;
   }
 
+  // One short chip per lens, to hint at what could sit here. Patterns the app has learned come first; the
+  // rest are ambient, one line per lens, rotating through the day. Lenses switched off or hidden never show.
+  var LENS_ORDER = ["sleep", "cycle", "moon", "zodiac", "fitness"];
   function lensChips(x) {
-    var hidden = {};
-    Object.keys(lenses).forEach(function (id) { if (lenses[id].hidden) { hidden[id] = true; } });
-    return Learner.chipsFor(history(), x.slice, x.states, hidden, 3).map(function (f) {
-      return f.kind === "single" ? lensText(f.lens, x.c) : f.lens.map(function (id) { return lensText(id, x.c); }).join(" · ");
+    var hidden = {}, taken = {}, out = [];
+    Object.keys(lenses).forEach(function (id) { if (lenses[id].hidden || !lenses[id].enabled) { hidden[id] = true; } });
+    Learner.chipsFor(history(), x.slice, x.states, hidden, 3).forEach(function (f) {
+      var ids = f.kind === "single" ? [f.lens] : f.lens;
+      ids.forEach(function (id) { taken[id] = true; });
+      out.push(ids.map(function (id) { return lensText(id, x.c); }).join(" · "));
     });
+    var hour = Math.floor(x.m / 30);
+    function add(id, options) {
+      if (hidden[id] || taken[id] || !options.length) { return; }
+      taken[id] = true;
+      out.push(options[(hour + LENS_ORDER.indexOf(id)) % options.length]);
+    }
+    add("sleep", ["Slept " + hm(test.sleep)]);
+    add("cycle", test.cycleDay > 0 ? [lensText("cycle", x.c)] : []);
+    add("moon", [x.c.moon.name]);
+    add("zodiac", x.c.moon.sign ? ["Moon in " + x.c.moon.sign, sunSign(x.c.day) + " season"] : []);
+    add("fitness", fitnessLines(x));
+    return out.slice(0, 5);
   }
 
   // ---- rendering ----
@@ -168,9 +201,8 @@
         title = a.label;
         sub = (a.steps ? a.steps.join(", ") + ". " : "") + "Until " + Model.clock(a.until) + ".";
       }
-      else if (a) { sub = "Last: " + a.label + "." + (v.skipped.length ? " Nothing picked since." : ""); }
-      else if (v.skipped.length) { sub = "Nothing picked yet today."; }
-      else { sub = v.id === bundle.root ? "Start of day." : "Nothing picked yet today."; }
+      else if (a) { sub = "Last: " + a.label + "."; }
+      else { sub = v.id === bundle.root ? "Start of day." : ""; }
     }
     return '<header class="top"><div class="row">' + hamburger() + '<h1' + (ui.titleNew ? ' class="new"' : '') + '>' + esc(title) + '</h1>' +
       '<button class="quiet" data-act="menu">Not this</button></div>' +
@@ -205,8 +237,9 @@
   }
 
   function bottomHtml(x) {
-    var chips = operational(x).slice(0, 3).concat(lensChips(x));
-    return '<footer class="bottom">' + chips.map(function (t) { return '<span class="chip">' + esc(t) + "</span>"; }).join("") + "</footer>";
+    var chips = operational(x).slice(0, 2).map(function (t) { return '<span class="chip">' + esc(t) + "</span>"; })
+      .concat(lensChips(x).map(function (t) { return '<span class="chip lens">' + esc(t) + "</span>"; }));
+    return '<footer class="bottom">' + chips.join("") + "</footer>";
   }
 
   function rerollState(x) {
@@ -305,7 +338,7 @@
         '<div class="ctl"><span>Energy</span><select data-test="energy"><option value="normal"' + (test.energy === "normal" ? " selected" : "") + '>Normal</option><option value="low"' + (test.energy === "low" ? " selected" : "") + ">Low</option></select></div>" +
         '<div class="ctl"><span>Sleep last night: <b id="sleepv">' + hm(test.sleep) + '</b></span><input type="range" min="5" max="9" step="2" value="' + test.sleep + '" data-test="sleep" data-out="sleepv"><div class="ticks"><span>5h</span><span>7h</span><span>9h</span></div></div>' +
         '<div class="ctl"><span>Cycle day: <b id="cyclev">' + (test.cycleDay || "off") + '</b></span><input type="range" min="0" max="28" step="1" value="' + test.cycleDay + '" data-test="cycleDay" data-out="cyclev"></div>' +
-        '<div class="btns"><label class="chk"><input type="checkbox" data-test="pause"' + (test.pause ? " checked" : "") + '> Pause 3 seconds after a pick</label><label class="chk"><input type="checkbox" data-test="auto"' + (test.auto ? " checked" : "") + '> Move time on after every 2 picks</label><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
+        '<div class="btns"><label class="chk"><input type="checkbox" data-test="pause"' + (test.pause ? " checked" : "") + '> Pause 3 seconds after a pick</label><label class="chk"><input type="checkbox" data-test="auto"' + (test.auto ? " checked" : "") + '> Move time on 30 minutes after every pick</label><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
         "<p>Add #test to the address to bring these back.</p></div>";
     }
     return bar + drawer;
@@ -358,13 +391,7 @@
     if (offers.length > 3000) { offers = offers.slice(offers.length - 3000); }
     var child = Model.childFor(x.view.node, card);
     S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
-    if (test.auto) {
-      S.recent = (S.recent || []).concat(card.duration_min || 0);
-      if (S.recent.length >= 2) {
-        S.advance = Math.max(15, Math.ceil((S.recent[0] + S.recent[1]) / 5) * 5);
-        S.recent = [];
-      }
-    }
+    if (test.auto) { S.advance = 30; }
     S.cursor = { node: child || x.view.id, setAt: x.m };
     saveAll();
     var box = document.querySelector(".mid .stack");
@@ -526,7 +553,7 @@
     else if (act === "time") {
       var m = el.getAttribute("data-m");
       test.minutes = m === "now" ? null : Number(m);
-      S.skew = 0; S.recent = []; delete S.advance;
+      S.skew = 0; delete S.advance;
     }
     else if (act === "drawer") { ui.drawer = !ui.drawer; }
     else if (act === "resetday") { replayDay(); }
@@ -571,7 +598,7 @@
     if (key) {
       var val = t.type === "checkbox" ? t.checked : t.value;
       if (key === "pause") { test.pause = !!val; }
-      else if (key === "auto") { test.auto = !!val; S.recent = []; delete S.advance; }
+      else if (key === "auto") { test.auto = !!val; delete S.advance; }
       else if (key === "dow") { test.dow = val === "" ? null : Number(val); }
       else if (key === "live") { test.live = val === "1"; if (test.live) { loadLive(); } }
       else if (key === "energy") { test.energy = val; }
