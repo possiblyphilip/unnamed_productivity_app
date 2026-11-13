@@ -61,6 +61,7 @@ The planner searches the day and writes one node per situation.
 - **Blocks:** the day is cut into blocks (morning, afternoon, evening, night) and the calendar adds a "before" and a "during" block around each event.
 - **Options** say which blocks they can appear in, with a rank per block, what must already be true (`needs`), what they make true (`gives`), and when to skip them (`skipIf`). A flag marks options that are demanding, gentle, or only for low energy.
 - **Retiring options:** an option is skipped once everything it gives is already true, and `skipIf` retires it for other reasons. A market walk retires coffee, eggs and toast, and a lap round the block, because a croissant and coffee on the way back takes their place.
+- **Rejections:** a rejection is its own outcome. The planner answers it with a new set that leaves the option out for the rest of the day, built on demand rather than precomputed (on a real server this is a short request, hidden behind the question the user is answering). Rejecting something other options wait on (a shower before getting dressed, the bedtime wash) assumes it is handled, so the path is not locked. A rejection is logged but is not yet used by the learner.
 - **Follow-ups:** an option can open a path of its own. Writing offers "Read it back" and "Take a break" first, a park walk offers a bench, a bath offers getting comfortable, and "Cook something new" is followed only by recipes (the planner marks them `exclusive`, so they take over the screen until one is chosen). Each follow-up is just an option that needs the fact its parent gives, with a rank that puts it first.
 - **Always something:** the appointment has its own chain (leave, phone on silent, then small things) and the night has a bedtime routine that ends with "Turn the lights out", the one thing that ends the day. A set of small fillers (three slow breaths, a glass of water, a minute at the window) fit any block. They only fill a screen up to its floor, so a screen with real options never has them, and one with none never comes up empty.
 - **Facts** are what the user has done. `did_<option>` stops an option repeating within a block. `dressed` and `fed` carry into later blocks; the rest are dropped when a block ends.
@@ -92,7 +93,7 @@ The planner works lazily. A node is created with its cards, and its children are
 
 ## Events (device to server)
 
-`offer_shown`, `card_viewed` (with count and dwell), `card_picked`, `reroll`, `offer_expired` (inaction), `app_opened`, `bundle_exhausted`, `note_sent`, `day_mode_set`, `adjustment_undone`, `branch_changed`, `lens_changed`. Each carries `node`, `cards`, `tags` as received, a context hash, a timestamp and an idempotency key.
+`offer_shown`, `card_viewed` (with count and dwell), `card_picked`, `card_rejected` (with `reason`: `not_feeling_it` or `more`, and the user's words when given), `reroll`, `offer_expired` (inaction), `app_opened`, `bundle_exhausted`, `note_sent`, `day_mode_set`, `adjustment_undone`, `branch_changed`, `lens_changed`. Each carries `node`, `cards`, `tags` as received, a context hash, a timestamp and an idempotency key.
 
 ## Privacy split
 
@@ -104,6 +105,8 @@ The planner works lazily. A node is created with its cards, and its children are
 A hamburger at the top left opens a menu: Today and Integrations. Integrations lists every app, feed and device that could be connected (calendars, messages, social, wearables and hardware, nutrition and training, cycle apps, sky and place, notes and files, focus tools). A few are live in this prototype: Google Calendar, weather and location, moon, and the sleep and cycle values. The rest are marked planned. Switching a lens on or off, and hiding its chips, happens there. The look follows the first demo: sage background, blush panel, paper cards.
 
 Three bands. Top: the node `title` plus a line about the last choice, built from the cursor history (it also reads "nothing picked since..." for inaction). Middle: 1 to 4 cards, centered. Bottom: context chips (operational facts, plus lens context only where it predicts the pick for this time slice; see Lenses). The test scrubber is an overlay in test builds only and never changes the layout.
+
+Cards are chosen by tapping or by swiping right: the other cards fade out, the pick moves up into the title, and three seconds later the next set fades in. Swiping left is an active rejection. A kind question appears ("Can you tell me more about that, or are you just not feeling it?") with two answers: a few words, or just not feeling it. Either way the card slides away and the screen is replaced by a new set. Arrow keys do the same on a focused card.
 
 "Not this" is one quiet control in the top band. It opens a sheet with three tiers: show different options (one reroll per node, a daily cap, and a third reroll in a day goes to the note sheet), tell it something (a one-way note, typed first, voice later, capped at two minutes), and today is off-plan (sick, travelling, big day, rough day). Day modes end at midnight unless the user ends them sooner.
 

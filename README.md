@@ -8,6 +8,7 @@ Open it on a phone. On iPhone: Share, then Add to Home Screen.
 
 ## What it does
 
+- Swipe a card right (or tap it) to choose it; swipe left to turn it down, which asks kindly whether you want to say more or just aren't feeling it.
 - Shows one to four option cards for right now. Ignoring them is a valid choice, and the cards change as the day moves. A picked card disappears, the next cards follow from what you did (a shower comes before getting dressed, which comes before perfume), and what you picked shows in the top band ("Now: Coffee by the window, until 8:20 am").
 - Learns from what is picked, not from ratings. Context chips at the bottom show a signal (sleep, moon, cycle) only where it has predicted the user's picks for that time slice.
 - "Not this" is a quiet control with three tiers: a reroll, a typed note, and day modes.
