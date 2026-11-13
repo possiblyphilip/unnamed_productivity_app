@@ -44,8 +44,9 @@
   var notes = load("cc.notes", []);
   var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true }, load("cc.test", {}));
   test.sleep = snapSleep(test.sleep);
-  var ui = { sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false };
+  var ui = { sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null };
   var holdTimer = null;
+  var exitTimer = null;
   var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], place: null, moon: Ctx.moonFor(new Date()) };
 
   // ---- time and context ----
@@ -171,7 +172,7 @@
       else if (v.skipped.length) { sub = "Nothing picked yet today."; }
       else { sub = v.id === bundle.root ? "Start of day." : "Nothing picked yet today."; }
     }
-    return '<header class="top"><div class="row">' + hamburger() + '<h1>' + esc(title) + '</h1>' +
+    return '<header class="top"><div class="row">' + hamburger() + '<h1' + (ui.titleNew ? ' class="new"' : '') + '>' + esc(title) + '</h1>' +
       '<button class="quiet" data-act="menu">Not this</button></div>' +
       '<p class="sub">' + esc(sub) + "</p></header>";
   }
@@ -180,10 +181,18 @@
     var v = x.view;
     if (S.dayMode) { return '<div class="card still">Nothing needed today.</div><div><button class="pill" data-act="enddaymode">End day mode</button></div>'; }
     if (!v.node) { return '<div class="card still">Nothing needed.</div>'; }
+    if (ui.exiting) {
+      var ex = ui.exiting;
+      return '<div class="stack">' + ex.cards.map(function (c) {
+        var cls = "card ghost" + (ex.pickedId === c.id ? " chosen" : ex.goneId === c.id ? " gone" : ex.pickedId ? " fade" : "");
+        return '<div class="' + cls + '">' + esc(c.text) + "</div>";
+      }).join("") + "</div>";
+    }
     if (ui.hold) { return ""; }
-    return '<div class="stack">' + cards.map(function (c) {
+    return '<div class="stack' + (ui.enterOnce ? " enter" : "") + '">' + cards.map(function (c) {
       if (c.tags && c.tags.kind === "quiet") { return '<div class="card still">' + esc(c.text) + "</div>"; }
-      return '<button class="card" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
+      var away = ui.reject && ui.reject.id === c.id ? " away" : "";
+      return '<button class="card' + away + '" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
     }).join("") + "</div>";
   }
 
@@ -215,6 +224,13 @@
           ? '<p style="margin:0">Got it.</p><p class="note-line" style="color:var(--hatch)">Test build: saved on this device only. No planner is connected yet.</p>'
           : '<textarea id="note" maxlength="1000" placeholder="What is off, or what you are about to do instead.">' + esc(ui.draft) + '</textarea>' +
             '<div class="actions"><button class="pill" data-act="sendnote">Send</button><span class="count" id="count">' + ui.draft.length + " / 1000</span></div>");
+    } else if (ui.sheet === "reject" && ui.reject) {
+      body = "<h2>\u201c" + esc(ui.reject.text) + "\u201d</h2>" +
+        (ui.reject.step === "more"
+          ? '<p class="ask">What about it isn\'t working?</p><textarea id="note" maxlength="1000" placeholder="Anything at all.">' + esc(ui.draft) + '</textarea>' +
+            '<div class="actions"><button class="pill" data-act="rejectsend">Send</button><span class="count" id="count">' + ui.draft.length + " / 1000</span></div>"
+          : '<p class="ask">Can you tell me more about that, or are you just not feeling it?</p>' +
+            '<button class="row-btn" data-act="rejectmore">I can tell you more</button><button class="row-btn" data-act="rejectquiet">Just not feeling it</button>');
     } else {
       body = "<h2>Today is off-plan</h2>" + DAY_MODES.map(function (d) {
         return '<button class="row-btn" data-act="daymode" data-mode="' + d[0] + '">' + d[1] + "</button>";
@@ -299,6 +315,8 @@
       current = x;
     }
     app.innerHTML = html + menuHtml();
+    ui.enterOnce = false;
+    ui.titleNew = false;
     if (bundle && precomputed !== sess && ui.screen === "today") { precomputed = sess; setTimeout(precompute, 30); }
   }
   var current = null;
@@ -334,11 +352,92 @@
     S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
     S.cursor = { node: child || x.view.id, setAt: x.m };
     saveAll();
+    ui.exiting = { cards: cards.filter(function (c) { return !(c.tags && c.tags.kind === "quiet"); }), pickedId: card.id };
+    ui.titleNew = true;
     clearTimeout(holdTimer);
+    clearTimeout(exitTimer);
     ui.hold = !!test.pause;
-    if (ui.hold) { holdTimer = setTimeout(function () { ui.hold = false; render(); }, 3000); }
+    exitTimer = setTimeout(function () { ui.exiting = null; if (!ui.hold) { ui.enterOnce = true; } render(); }, 450);
+    if (ui.hold) { holdTimer = setTimeout(function () { ui.hold = false; ui.enterOnce = true; render(); }, 3000); }
     render();
   }
+
+  // Swipe left: a kind question first. "Not feeling it" or a few words, then the planner answers with a
+  // new set that leaves the option out for the rest of the day.
+  function startReject(id) {
+    var x = compute();
+    var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
+    if (!card || (card.tags && card.tags.kind === "quiet")) { return; }
+    ui.reject = { id: id, text: card.text, option: card.option, step: "ask" };
+    ui.sheet = "reject";
+    ui.draft = "";
+    render();
+  }
+
+  function doReject(reason, text) {
+    var x = compute();
+    var cards = cardsFor(x);
+    var r = ui.reject;
+    var card = r && cards.filter(function (c) { return c.id === r.id; })[0];
+    if (!card || !x.view.node) { ui.sheet = null; ui.reject = null; render(); return; }
+    offers.push({
+      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states),
+      shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
+      picked: null, rejected: card.option, reason: reason, source: test.minutes !== null ? "test" : "live"
+    });
+    if (text) { notes.push({ t: Date.now(), text: text, about: card.option }); }
+    S.cursor = { node: sess.reject(x.view.id, card.option), setAt: x.m };
+    ui.sheet = null; ui.reject = null; ui.noteSent = false; ui.draft = "";
+    ui.exiting = { cards: cards.filter(function (c) { return !(c.tags && c.tags.kind === "quiet"); }), goneId: card.id };
+    clearTimeout(exitTimer);
+    exitTimer = setTimeout(function () { ui.exiting = null; ui.enterOnce = true; render(); }, 450);
+    saveAll();
+    render();
+  }
+
+  // Swipe right (or tap) chooses. Swipe left rejects. Arrow keys do the same on a focused card.
+  var drag = null, swallowClick = false;
+  function cardEl(e) { return e.target && e.target.closest ? e.target.closest('button.card[data-act="pick"]') : null; }
+
+  app.addEventListener("pointerdown", function (e) {
+    var el = cardEl(e);
+    if (!el || ui.hold || ui.exiting || ui.sheet || (e.pointerType === "mouse" && e.button !== 0)) { return; }
+    drag = { el: el, id: el.getAttribute("data-id"), x: e.clientX, y: e.clientY, dx: 0, moved: false, pid: e.pointerId };
+  });
+  app.addEventListener("pointermove", function (e) {
+    if (!drag || e.pointerId !== drag.pid) { return; }
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; }
+      if (Math.abs(dx) < 8) { return; }
+      drag.moved = true;
+      drag.el.classList.add("drag");
+      try { drag.el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointers cannot be captured */ }
+    }
+    drag.dx = dx;
+    drag.el.style.transform = "translateX(" + dx + "px) rotate(" + (dx / 50) + "deg)";
+    drag.el.classList.toggle("right", dx > 50);
+    drag.el.classList.toggle("left", dx < -50);
+  });
+  function endDrag(e, cancelled) {
+    if (!drag || e.pointerId !== drag.pid) { return; }
+    var d = drag;
+    drag = null;
+    if (!d.moved) { return; }
+    swallowClick = true;
+    setTimeout(function () { swallowClick = false; }, 60);
+    if (!cancelled && d.dx > 90) { pick(d.id); }
+    else if (!cancelled && d.dx < -90) { startReject(d.id); }
+    else { d.el.classList.remove("drag", "right", "left"); d.el.style.transform = ""; }
+  }
+  app.addEventListener("pointerup", function (e) { endDrag(e, false); });
+  app.addEventListener("pointercancel", function (e) { endDrag(e, true); });
+  app.addEventListener("keydown", function (e) {
+    var el = cardEl(e);
+    if (!el || ui.hold || ui.exiting || ui.sheet) { return; }
+    if (e.key === "ArrowRight") { e.preventDefault(); pick(el.getAttribute("data-id")); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); startReject(el.getAttribute("data-id")); }
+  });
 
   function reroll() {
     var x = compute();
@@ -365,14 +464,18 @@
   }
 
   app.addEventListener("click", function (e) {
+    if (swallowClick) { swallowClick = false; return; }
     if (ui.drawer && !e.target.closest(".drawer, .testbar")) { ui.drawer = false; render(); return; }
     var el = e.target.closest("[data-act]");
     if (!el || el.disabled) { return; }
     var act = el.getAttribute("data-act");
     if (act === "pick") { pick(el.getAttribute("data-id")); return; }
     if (act === "reroll") { reroll(); return; }
+    if (act === "rejectmore") { if (ui.reject) { ui.reject.step = "more"; render(); } return; }
+    if (act === "rejectquiet") { doReject("not_feeling_it", ""); return; }
+    if (act === "rejectsend") { var why = ui.draft.trim(); if (why) { doReject("more", why); } return; }
     if (act === "menu") { ui.sheet = "menu"; }
-    else if (act === "closesheet") { ui.sheet = null; ui.noteSent = false; }
+    else if (act === "closesheet") { ui.sheet = null; ui.noteSent = false; ui.reject = null; }
     else if (act === "notesheet") { ui.sheet = "note"; ui.noteSent = false; }
     else if (act === "daysheet") { ui.sheet = "day"; }
     else if (act === "daymode") {

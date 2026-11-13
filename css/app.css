@@ -87,3 +87,24 @@ button.card:focus-visible, .pill:focus-visible, .row-btn:focus-visible, .integ:f
 .drawer .btns { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .drawer .btns button { text-align: left; border: 1px solid #d8d3c9; background: #fff; border-radius: 8px; padding: 6px 9px; font-size: 13px; }
 .drawer p { color: #6b6760; font-size: 12px; margin: 8px 0 0; }
+
+.card { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.card.drag { cursor: grabbing; z-index: 2; transition: none; }
+.card.right { background: var(--blush); }
+.card.left { background: #e4ded6; color: #8a857c; }
+.card.away { opacity: 0.25; transform: translateX(-14px); }
+.card.ghost { pointer-events: none; }
+.card.chosen { animation: toTitle 0.45s ease forwards; }
+.card.fade { animation: fadeOut 0.35s ease forwards; }
+.card.gone { animation: slideAway 0.35s ease forwards; }
+.stack.enter { animation: fadeIn 0.7s ease both; }
+.top h1.new { animation: fadeIn 0.5s ease both; }
+.sheet .ask { margin: 0 0 4px 4px; font-size: 0.95rem; }
+@keyframes toTitle { to { transform: translateY(-70px) scale(0.96); opacity: 0; } }
+@keyframes fadeOut { to { opacity: 0; } }
+@keyframes slideAway { to { transform: translateX(-110%); opacity: 0; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .card.chosen, .card.fade, .card.gone { animation-duration: 0.01s; }
+  .stack.enter, .top h1.new { animation: none; }
+}

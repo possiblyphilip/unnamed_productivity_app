@@ -183,6 +183,33 @@ expect("after leaving for the appointment: phone on silent", screen(normal, ["le
 expect("after the phone is on silent there is still something", screen(normal, ["leave_now", "silent_phone"], "12:40"), { count: [1, 1] });
 expect("after getting ready: leave early comes first", screen(normal, ["getting_ready"], "11:40"), { first: "leave_early" });
 
+// "not feeling it": a new set without the option, for the rest of the day
+(function () {
+  const sess = Planner.session(Sample.context, { energy: "normal" });
+  const b = sess.bundle;
+  const at = function (t) { return Model.advance(b, { node: b.root }, mins(t), sess.ensure).id; };
+  const show = function (id, t) { return Model.advance(b, { node: id }, mins(t), sess.ensure); };
+  const ids = function (v) { return v.cards.map(function (x) { return x.id; }); };
+  function row(name, ok, detail) { if (!ok) { bad("reject: " + name + " (" + detail + ")"); } console.log((ok ? "ok   " : "FAIL ") + "reject: " + name + "  ->  " + detail); }
+
+  let v = show(sess.reject(at("08:10"), "shower"), "08:10");
+  row("no shower: it is gone but getting dressed is not locked", ids(v).indexOf("shower") === -1 && ids(v).indexOf("get_dressed") !== -1, ids(v).join(","));
+  v = show(sess.reject(at("08:10"), "coffee_window"), "08:10");
+  row("no coffee: it is gone and the screen is still full", ids(v).indexOf("coffee_window") === -1 && ids(v).length >= 2, ids(v).join(","));
+  const mid = b.nodes[at("08:10")].children["picked:coffee_window"];
+  v = show(sess.reject(mid, "write_25"), "14:10");
+  row("no writing in the morning: still out in the afternoon", ids(v).indexOf("write_25") === -1 && !b.nodes[v.id].reroll || ids(show(b.nodes[v.id].children.reroll, "14:10")).indexOf("write_25") === -1, ids(v).join(","));
+  const evening = at("18:00");
+  v = show(sess.reject(evening, "new_recipe"), "18:00");
+  row("no new recipe: no recipes, dinner is still on offer", ids(v).indexOf("new_recipe") === -1 && ids(v).every(function (x) { return x.indexOf("recipe_") !== 0; }) && (ids(v).indexOf("chicken_bowl") !== -1 || ids(v).indexOf("soup_bread") !== -1), ids(v).join(","));
+  let night = at("20:30");
+  night = sess.reject(night, "wash_face");
+  const seen = {};
+  let id = night;
+  for (let i = 0; i < 6; i++) { const w = show(id, "20:30"); w.cards.forEach(function (x) { seen[x.id] = true; }); if (!w.cards.length) { break; } id = w.node.children["picked:" + w.cards[0].id]; }
+  row("no bedtime wash: reading in bed and lights out are still reachable", seen.read_bed || seen.lights_out, Object.keys(seen).join(","));
+})();
+
 // the day never runs dry: from every part of the day, picking the first card keeps giving something
 (function () {
   const sess = Planner.session(Sample.context, { energy: "normal" });

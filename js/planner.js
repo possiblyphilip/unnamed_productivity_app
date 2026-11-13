@@ -44,9 +44,9 @@
   function opt(id, text, label, x) { x.id = id; x.text = text; x.label = label; return x; }
 
   var OPTIONS = [
-    opt("coffee_window", "Have a slow coffee by the window", "Coffee by the window", { dur: 10, goal: "g_calm", gentle: true, signal: { overwhelm: -1 }, gives: ["coffee"], skipIf: ["market"], at: { morning: { rank: 1 } } }),
-    opt("eat_first", "Have some eggs and toast", "Eggs and toast", { dur: 15, goal: "g_nutrition", signal: { energy: 1 }, gives: ["fed"], skipIf: ["market"], at: { morning: { rank: 2 } } }),
-    opt("shower", "Take a shower", "Showering", { dur: 15, goal: "g_body", signal: { energy: 1 }, gives: ["showered"], at: { morning: { rank: 3 } } }),
+    opt("coffee_window", "Have a slow coffee by the window", "Coffee by the window", { dur: 10, goal: "g_calm", gentle: true, signal: { overwhelm: -1 }, gives: ["coffee"], skipIf: ["market"], onReject: ["coffee"], at: { morning: { rank: 1 } } }),
+    opt("eat_first", "Have some eggs and toast", "Eggs and toast", { dur: 15, goal: "g_nutrition", signal: { energy: 1 }, gives: ["fed"], skipIf: ["market"], onReject: ["fed"], at: { morning: { rank: 2 } } }),
+    opt("shower", "Take a shower", "Showering", { dur: 15, goal: "g_body", signal: { energy: 1 }, gives: ["showered"], onReject: ["showered"], at: { morning: { rank: 3 } } }),
     opt("stretch", "Stretch", "Stretching", { dur: 10, goal: "g_body", gentle: true, signal: { energy: 1 }, skipIf: ["market"], at: { morning: { rank: 3.5 } } }),
     opt("get_dressed", "Get dressed", "Getting dressed", { dur: 10, gives: ["dressed"], at: { morning: { rank: 1.2, needs: ["showered"] } } }),
     opt("write_25", "Write for 25 minutes", "Writing", { dur: 25, goal: "g_writing", horizon: "medium", demanding: true, signal: { energy: 1 }, gives: ["wrote"], at: { morning: { rank: 5, needs: ["coffee"] }, afternoon: { rank: 1 } } }),
@@ -80,7 +80,7 @@
     opt("bag_tomorrow", "Pack tomorrow's bag", "Packing tomorrow's bag", { dur: 10, goal: "g_admin", at: { evening: { rank: 14 } } }),
     opt("eat_before_out", "Eat something", "Eating before heading out", { dur: 10, goal: "g_nutrition", gives: ["fed"], skipIf: ["fed"], at: { before_event: { rank: 1 } } }),
     opt("bag_keys", "Gather your bag and keys", "Bag and keys", { kind: "variation", dur: 5, signal: { overwhelm: -1 }, at: { before_event: { rank: 2 } } }),
-    opt("getting_ready", "Get ready", "Getting ready", { kind: "checklist", dur: 20, signal: { overwhelm: -1 }, steps: ["Dressed", "Keys", "Bag", "Phone charged"], gives: ["ready"], at: { before_event: { rank: 3 } } }),
+    opt("getting_ready", "Get ready", "Getting ready", { kind: "checklist", dur: 20, signal: { overwhelm: -1 }, steps: ["Dressed", "Keys", "Bag", "Phone charged"], gives: ["ready"], onReject: ["ready"], at: { before_event: { rank: 3 } } }),
     opt("leave_early", "Leave ten minutes early", "Leaving early by bus", { kind: "variation", dur: 10, signal: { overwhelm: -1 }, at: { before_event: { rank: 0.5, needs: ["ready"] } } }),
     opt("leave_now", "Leave for the appointment", "Heading to the appointment", { kind: "info", dur: 14, gives: ["headed"], at: { during_event: { rank: 1 } } }),
     opt("read_back", "Read it back and fix one thing", "Reading it back", { dur: 10, goal: "g_writing", at: { morning: { rank: 0.5, needs: ["wrote"] }, afternoon: { rank: 0.5, needs: ["wrote"] } } }),
@@ -100,7 +100,7 @@
     opt("recipe_noodles", "Make a miso noodle soup", "Miso noodle soup", { dur: 20, goal: "g_joy", exclusive: true, gives: ["dinner"], skipIf: ["dinner"], at: { evening: { rank: 0.5, needs: ["cooking"] } } }),
     opt("silent_phone", "Put your phone on silent", "Phone on silent", { dur: 1, at: { during_event: { rank: 2, needs: ["headed"] } } }),
     opt("phone_charge", "Put your phone on charge", "Phone on charge", { dur: 1, gives: ["charged"], at: { night: { rank: 1 } } }),
-    opt("wash_face", "Wash your face and brush your teeth", "Getting ready for bed", { dur: 10, goal: "g_body", gives: ["bedready"], at: { night: { rank: 2 } } }),
+    opt("wash_face", "Wash your face and brush your teeth", "Getting ready for bed", { dur: 10, goal: "g_body", gives: ["bedready"], onReject: ["bedready"], at: { night: { rank: 2 } } }),
     opt("set_alarm", "Set tomorrow's alarm", "Setting the alarm", { dur: 1, goal: "g_admin", at: { night: { rank: 3 } } }),
     opt("read_bed", "Read in bed for 15 minutes", "Reading in bed", { dur: 15, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { night: { rank: 4, needs: ["bedready"] } } }),
     opt("lights_out", "Turn the lights out", "Lights out", { dur: 1, gentle: true, gives: ["asleep"], at: { night: { rank: 5, needs: ["bedready"] } } }),
@@ -177,7 +177,7 @@
     var cap = capacity(opts), out = [];
     OPTIONS.forEach(function (o) {
       var at = o.at[block.type];
-      if (!at || facts["did_" + o.id]) { return; }
+      if (!at || facts["did_" + o.id] || facts["no_" + o.id]) { return; }
       if ((at.needs || []).some(function (n) { return !facts[n]; })) { return; }
       if ((o.skipIf || []).some(function (n) { return facts[n]; })) { return; }
       if (o.gives && o.gives.every(function (g) { return facts[g]; })) { return; }
@@ -232,7 +232,7 @@
 
   function persist(facts) {
     var f = {};
-    Object.keys(facts).forEach(function (k) { if (PERSIST[k]) { f[k] = true; } });
+    Object.keys(facts).forEach(function (k) { if (PERSIST[k] || k.indexOf("no_") === 0) { f[k] = true; } });
     return f;
   }
 
@@ -309,6 +309,18 @@
       Object.keys(n.children).forEach(function (k) { if (n.children[k]) { expand(n.children[k], depth - 1); } });
     }
 
+    // "Not feeling it": the server answers with a new set that leaves the option out for the rest of the day.
+    // Built on demand, not part of the precomputed tree. Rejecting something that other options wait on
+    // (a shower before getting dressed) assumes it is handled, so the path is not locked.
+    function reject(key, optionId) {
+      var n = nodes[key];
+      if (!n) { return key; }
+      var facts = factsObj(n.facts);
+      facts["no_" + optionId] = true;
+      ((BY_ID[optionId] || {}).onReject || []).forEach(function (g) { facts[g] = true; });
+      return node(n.bi, facts, 0);
+    }
+
     // After a new session replaces an old one (energy changed, weather arrived), bring back the node
     // the user was on so their progress through the morning is not lost.
     function restore(key) {
@@ -322,7 +334,7 @@
       schema: "bundle/0.2", bundle_id: "demo-" + ctx.day, root: root, cards: cards, nodes: nodes,
       assumptions: { day: ctx.day, energy: opts.energy || "normal", sleep: sleepBand(opts.sleep), blocks: blocks.map(function (b) { return b.type + " " + hhmm(b.s) + "-" + hhmm(b.e); }) }
     };
-    return { bundle: bundle, ensure: ensure, expand: expand, restore: restore };
+    return { bundle: bundle, ensure: ensure, expand: expand, restore: restore, reject: reject };
   }
 
   // The whole tree at once, with a cap on picks per block. For tests and for printing.
