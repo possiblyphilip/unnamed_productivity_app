@@ -24,9 +24,10 @@
   var DAY_MODES = [["sick", "Sick"], ["travel", "Travelling"], ["big", "Big day"], ["rough", "Rough day"]];
   var DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var STOPS = [["8:10a", 490], ["11:40a", 700], ["2:10p", 850], ["8:30p", 1230]];
-  var QUIET = { id: "q_auto", option: "quiet_now", text: "Nothing needed right now.", tags: { kind: "quiet" }, signal: {} };
+  function quietCard(x) { return { id: "q_auto", option: "quiet", text: (x.view.node && x.view.node.quiet) || "Nothing needed right now.", tags: { kind: "quiet" }, signal: {} }; }
 
   var bundle = null;
+  var planSig = "";
   var S = load("cc.state", {});
   var offers = load("cc.offers", []);
   var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false } }, load("cc.lenses", {}));
@@ -45,7 +46,7 @@
 
   function ctxNow() {
     if (!test.live) {
-      var c = bundle.context;
+      var c = Sample.context;
       return { weather: c.weather, sunrise: c.sunrise, sunset: c.sunset, calendar: c.calendar, moon: { name: cap(c.moon.phase), group: Learner.moonGroup(c.moon.phase) } };
     }
     return { weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar, moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation) } };
@@ -70,16 +71,18 @@
     var c = ctxNow();
     if (S.day !== todayKey()) { S = { day: todayKey() }; }
     if (S.cursor && S.cursor.setAt > m) { S = { day: S.day, dayMode: S.dayMode }; }
+    var sig = [test.live ? 1 : 0, test.energy, live.weather.length, live.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
+    if (sig !== planSig) { bundle = Planner.plan(c, { energy: test.energy }); planSig = sig; }
     var cursor = S.cursor || { node: bundle.root, setAt: 0 };
-    var view = Model.advance(bundle, cursor, m, c, { energy: test.energy }, S.taken || {});
-    return { m: m, c: c, cursor: cursor, view: view, states: lensStates(c), slice: Learner.sliceOf(dowNow(), m) };
+    var view = Model.advance(bundle, cursor, m);
+    return { m: m, c: c, cursor: cursor, view: view, live: Model.liveFor(c, m), states: lensStates(c), slice: Learner.sliceOf(dowNow(), m) };
   }
 
   function isActive(card) { return !!(card.signal && card.signal.energy > 0); }
 
   function cardsFor(x) {
     var cards = x.view.cards.slice();
-    if (!cards.length) { return [QUIET]; }
+    if (!cards.length) { return [quietCard(x)]; }
     var p = Learner.tilt(offers, x.slice, x.states);
     if (p === null) { return cards; }
     var activeFirst = p >= 0.5;
@@ -91,7 +94,7 @@
   }
 
   function operational(x) {
-    var out = [], m = x.m, c = x.c, next = x.view.live.next;
+    var out = [], m = x.m, c = x.c, next = x.live.next;
     if (next) {
       var n = Model.mins(next.start) - m;
       out.push(n <= 90 ? next.title + " in " + n + " min" : next.title + " at " + Model.clock(Model.mins(next.start)));
@@ -252,7 +255,6 @@
   }
 
   function render() {
-    if (!bundle) { app.innerHTML = '<p class="empty" style="margin-top:40vh">Loading</p>'; return; }
     var html;
     if (ui.screen === "integrations") {
       html = integrationsHtml();
@@ -282,14 +284,8 @@
     });
     if (offers.length > 3000) { offers = offers.slice(offers.length - 3000); }
     var child = Model.childFor(x.view.node, card);
-    S.taken = S.taken || {};
-    S.taken[card.option] = true;
     S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
-    S.cursor = {
-      node: child === null ? x.view.id : child, setAt: x.m,
-      carry: cards.filter(function (c) { return c.id !== card.id && !(c.tags && c.tags.kind === "quiet"); }),
-      carryUntil: Model.mins(x.view.node.window[1])
-    };
+    S.cursor = { node: child || x.view.id, setAt: x.m };
     saveAll();
     render();
   }
@@ -406,14 +402,9 @@
   if (location.hash === "#clean") { test.on = false; }
   if (location.hash === "#test") { test.on = true; }
 
-  fetch("fixtures/sample-day.json?v=7").then(function (r) { return r.json(); }).then(function (b) {
-    bundle = b;
-    if (test.live) { loadLive(); }
-    render();
-    setInterval(function () {
-      if (test.minutes === null && !ui.sheet && !ui.menu && ui.screen === "today" && !ui.drawer) { render(); }
-    }, 30000);
-  }).catch(function () {
-    app.innerHTML = '<p class="empty" style="margin:40vh 20px 0">Could not load the sample day. Serve this folder over http and reload.</p>';
-  });
+  if (test.live) { loadLive(); }
+  render();
+  setInterval(function () {
+    if (test.minutes === null && !ui.sheet && !ui.menu && ui.screen === "today" && !ui.drawer) { render(); }
+  }, 30000);
 })();

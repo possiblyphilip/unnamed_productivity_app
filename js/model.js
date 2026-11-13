@@ -42,65 +42,26 @@
     };
   }
 
-  function validNow(valid, live) {
-    if (!valid) { return true; }
-    if (valid.free_min_gte !== undefined && live.free_min < valid.free_min_gte) { return false; }
-    if (valid.weather && live.weather !== "unknown" && valid.weather.indexOf(live.weather) === -1) { return false; }
-    if (valid.daylight !== undefined && live.daylight !== valid.daylight) { return false; }
-    if (valid.event_within_min_lte !== undefined && (live.event_in === null || live.event_in > valid.event_within_min_lte)) { return false; }
-    return true;
-  }
-
-  function variantFor(node, state) {
-    var vs = node.variants || [];
-    for (var i = 0; i < vs.length; i++) {
-      var keys = Object.keys(vs[i].when);
-      if (keys.every(function (k) { return state[k] === vs[i].when[k]; })) { return vs[i]; }
-    }
-    return null;
-  }
-
-  function dedupe(cards) {
-    var seen = {}, out = [];
-    cards.forEach(function (c) { if (!seen[c.option]) { seen[c.option] = true; out.push(c); } });
-    return out;
-  }
-
   // Which node is current for this cursor and time. Pure: it never changes the cursor, so a test
-  // clock can move forward and back. Only picks and rerolls move the cursor.
-  // There is always something to show. A picked card is gone (its option is in `taken`), the cards
-  // passed over stay on screen until their node ends (`cursor.carry`), and the pick's follow-up cards
-  // are added after them. A node reached by a pick is shown right away, whatever its window says.
-  function advance(bundle, cursor, nowMin, ctx, state, taken) {
-    taken = taken || {};
-    var live = liveFor(ctx, nowMin);
-    var id = cursor.node;
+  // clock can move forward and back. Only picks and rerolls move the cursor. The app does no
+  // planning: when a node's window has ended it follows the node's `expired` child.
+  function advance(bundle, cursor, nowMin) {
+    var id = cursor.node && bundle.nodes[cursor.node] ? cursor.node : bundle.root;
     var skipped = [];
-    var swapped = {};
-    var guard = 0, hops = 0;
-    while (id && guard++ < 60) {
+    var guard = 0;
+    while (id && guard++ < 80) {
       var n = bundle.nodes[id];
       if (!n) { break; }
       if (nowMin >= mins(n.window[1])) { skipped.push(id); id = n.children.expired; continue; }
-      if (!validNow(n.valid_if, live) && n.on_invalid && !swapped[id]) { swapped[id] = true; id = n.on_invalid; continue; }
-      var v = variantFor(n, state);
-      var own = v ? v.cards : n.cards;
-      var carry = (!skipped.length && cursor.carry && nowMin < (cursor.carryUntil || 0)) ? cursor.carry : [];
-      var cards = dedupe(carry.concat(own)).filter(function (c) { return !taken[c.option]; }).slice(0, 4);
-      if (!cards.length) {
-        var nx = n.children["picked:*"];
-        if (nx && nx !== id && hops++ < 4) { id = nx; continue; }
-      }
-      return { id: id, node: n, cards: cards, variant: !!v, skipped: skipped, live: live, waiting: null };
+      return { id: id, node: n, cards: n.cards.map(function (c) { return bundle.cards[c]; }), skipped: skipped };
     }
-    return { id: null, node: null, cards: [], variant: false, skipped: skipped, live: live, waiting: null };
+    return { id: null, node: null, cards: [], skipped: skipped };
   }
 
   function childFor(node, card) {
     var c = node.children;
-    if (Object.prototype.hasOwnProperty.call(c, "picked:" + card.id)) { return c["picked:" + card.id]; }
-    return c["picked:*"];
+    return c["picked:" + card.id];
   }
 
-  return { mins: mins, hhmm: hhmm, clock: clock, liveFor: liveFor, validNow: validNow, variantFor: variantFor, advance: advance, childFor: childFor };
+  return { mins: mins, hhmm: hhmm, clock: clock, liveFor: liveFor, advance: advance, childFor: childFor };
 });

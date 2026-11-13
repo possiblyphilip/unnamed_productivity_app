@@ -1,124 +1,142 @@
 "use strict";
-// Checks fixtures/sample-day.json against the rules in MODEL.md.
-// The "which node is current" logic comes from js/model.js, the same file the web app uses.
-const fs = require("fs");
+// Plans the sample day with js/planner.js and checks the tree against the rules in MODEL.md.
 const path = require("path");
 const Model = require(path.join(__dirname, "..", "js", "model.js"));
-
-const file = process.argv[2] || path.join(__dirname, "..", "fixtures", "sample-day.json");
-const day = JSON.parse(fs.readFileSync(file, "utf8"));
-const nodes = day.nodes;
-const bank = day.options;
-const problems = [];
-function bad(msg) { problems.push(msg); }
+const Planner = require(path.join(__dirname, "..", "js", "planner.js"));
+const Sample = require(path.join(__dirname, "..", "js", "sample.js"));
 const mins = Model.mins;
 
-const KINDS = ["routine", "variation", "wild", "checklist", "quiet", "flirty", "info"];
+const problems = [];
+function bad(msg) { problems.push(msg); }
 const PRAISE = /great job|well done|good job|proud of you|amazing|you did it|nailed it|awesome/i;
+const KINDS = ["routine", "variation", "wild", "checklist", "quiet", "flirty", "info"];
+const OPT = {};
+Planner.OPTIONS.forEach(function (o) { OPT[o.id] = o; });
 
-function withWeather(ctx, sky) {
-  if (!sky) { return ctx; }
-  return Object.assign({}, ctx, { weather: [{ from: "00:00", to: "23:59", sky: sky }] });
-}
+function ctxWith(over) { return Object.assign({}, Sample.context, over || {}); }
 
-function resolve(now, state, weatherOverride) {
-  const v = Model.advance(day, { node: day.root, enterAt: 0 }, mins(now), withWeather(day.context, weatherOverride), state);
-  return { id: v.id, cards: v.cards.map(function (c) { return c.id; }) };
-}
-
-if (!nodes[day.root]) { bad("root " + day.root + " does not exist"); }
-const seenCards = {};
-Object.keys(nodes).forEach(function (id) {
-  const n = nodes[id];
-  const where = "node " + id;
-  if (!n.title) { bad(where + ": missing title"); }
-  if (mins(n.window[1]) <= mins(n.window[0])) { bad(where + ": window ends before it starts"); }
-  if (n.cards.length < 1 || n.cards.length > 4) { bad(where + ": needs 1 to 4 cards, has " + n.cards.length); }
-  const all = n.cards.slice();
-  (n.variants || []).forEach(function (v) {
-    if (v.cards.length < 1 || v.cards.length > 4) { bad(where + ": variant needs 1 to 4 cards"); }
-    v.cards.forEach(function (c) { all.push(c); });
+function checkTree(label, bundle) {
+  const nodes = bundle.nodes;
+  const ids = Object.keys(nodes);
+  ids.forEach(function (id) {
+    const n = nodes[id];
+    const where = label + " node " + id;
+    if (!n.title) { bad(where + ": missing title"); }
+    if (mins(n.window[1]) <= mins(n.window[0])) { bad(where + ": window ends before it starts"); }
+    if (n.cards.length > 4) { bad(where + ": more than 4 cards"); }
+    if (!n.cards.length && !n.quiet) { bad(where + ": no cards and no quiet text"); }
+    if (!("expired" in n.children)) { bad(where + ": missing 'expired' child"); }
+    if (n.reroll && !n.children.reroll) { bad(where + ": reroll on but no reroll child"); }
+    if (!n.reroll && n.children.reroll) { bad(where + ": reroll child but reroll off"); }
+    let flirty = 0;
+    n.cards.forEach(function (cid) {
+      const c = bundle.cards[cid];
+      if (!c) { bad(where + ": unknown card " + cid); return; }
+      if (PRAISE.test(c.text)) { bad(where + ": praise wording: " + c.text); }
+      if (KINDS.indexOf(c.tags.kind) === -1) { bad(where + ": unknown kind " + c.tags.kind); }
+      if (c.tags.kind === "flirty") { flirty++; }
+      const at = OPT[cid].at[n.type] || {};
+      (at.needs || []).forEach(function (need) { if (n.facts.indexOf(need) === -1) { bad(where + ": " + cid + " shown without " + need); } });
+      (OPT[cid].skipIf || []).forEach(function (s) { if (n.facts.indexOf(s) !== -1) { bad(where + ": " + cid + " shown despite " + s); } });
+      const child = n.children["picked:" + cid];
+      if (!child || !nodes[child]) { bad(where + ": no child for pick " + cid); }
+      else if (nodes[child].cards.indexOf(cid) !== -1) { bad(where + ": " + cid + " comes back after being picked"); }
+    });
+    if (flirty > 1) { bad(where + ": more than one flirty card"); }
+    Object.keys(n.children).forEach(function (k) {
+      const t = n.children[k];
+      if (t !== null && !nodes[t]) { bad(where + ": child " + k + " points to missing node " + t); }
+    });
   });
-  all.forEach(function (c) {
-    if (seenCards[c.id]) { bad("card id " + c.id + " used twice"); }
-    seenCards[c.id] = true;
-    if (!bank[c.option]) { bad(where + ": card " + c.id + " uses unknown option " + c.option); }
-    if (KINDS.indexOf(c.tags.kind) === -1) { bad(where + ": card " + c.id + " has unknown kind " + c.tags.kind); }
-    if (PRAISE.test(c.text)) { bad(where + ": card " + c.id + " reads as praise: " + c.text); }
-  });
-  if (n.cards.filter(function (c) { return c.tags.kind === "flirty"; }).length > 1) { bad(where + ": more than one flirty card"); }
-  if (!("expired" in n.children)) { bad(where + ": missing 'expired' child (inaction needs an outcome)"); }
-  if (!("picked:*" in n.children)) { bad(where + ": missing 'picked:*' child"); }
-  if (n.reroll && !n.children.reroll) { bad(where + ": reroll is on but there is no 'reroll' child"); }
-  if (!n.reroll && n.children.reroll) { bad(where + ": has a 'reroll' child but reroll is off"); }
-  Object.keys(n.children).forEach(function (k) {
-    const t = n.children[k];
-    if (t !== null && !nodes[t]) { bad(where + ": child " + k + " points to missing node " + t); }
-  });
-  if (n.on_invalid && !nodes[n.on_invalid]) { bad(where + ": on_invalid points to missing node " + n.on_invalid); }
-});
 
-const reach = {};
-(function walk(id) {
-  if (!id || reach[id] || !nodes[id]) { return; }
-  reach[id] = true;
-  const n = nodes[id];
-  Object.keys(n.children).forEach(function (k) { walk(n.children[k]); });
-  if (n.on_invalid) { walk(n.on_invalid); }
-})(day.root);
-Object.keys(nodes).forEach(function (id) { if (!reach[id]) { bad("node " + id + " is unreachable from root"); } });
+  const reach = {};
+  (function walk(id) {
+    if (!id || reach[id] || !nodes[id]) { return; }
+    reach[id] = true;
+    Object.keys(nodes[id].children).forEach(function (k) { walk(nodes[id].children[k]); });
+  })(bundle.root);
+  ids.forEach(function (id) { if (!reach[id]) { bad(label + " node " + id + " is unreachable"); } });
 
-let chainId = day.root;
-let prevEnd = null;
-let flirtyOnChain = 0;
-const chainSeen = {};
-while (chainId) {
-  if (chainSeen[chainId]) { bad("expired chain loops at " + chainId); break; }
-  chainSeen[chainId] = true;
-  const n = nodes[chainId];
-  if (!n) { bad("expired chain points to missing node " + chainId); break; }
-  if (prevEnd !== null && mins(n.window[0]) !== prevEnd) { bad("expired chain gap before " + chainId + " (" + n.window[0] + " vs " + prevEnd + " minutes)"); }
-  prevEnd = mins(n.window[1]);
-  flirtyOnChain += n.cards.filter(function (c) { return c.tags.kind === "flirty"; }).length;
-  chainId = n.children.expired;
-}
-if (prevEnd !== null && prevEnd < mins("23:59")) { bad("expired chain ends before the day does"); }
-if (flirtyOnChain > 2) { bad("more than 2 flirty cards on the default path"); }
-
-day.scenarios.forEach(function (s) {
-  const r = resolve(s.now, s.state, s.weather_override);
-  if (r.id !== s.expect) { bad("scenario '" + s.name + "': expected " + s.expect + ", got " + r.id); }
-  if (s.expect_first_card && r.cards[0] !== s.expect_first_card) {
-    bad("scenario '" + s.name + "': expected first card " + s.expect_first_card + ", got " + r.cards[0]);
+  let id = bundle.root, prevEnd = null, first = true;
+  const seen = {};
+  while (id) {
+    if (seen[id]) { bad(label + ": expired chain loops at " + id); break; }
+    seen[id] = true;
+    const n = nodes[id];
+    if (first && n.window[0] !== "07:30") { bad(label + ": the day starts at " + n.window[0]); }
+    first = false;
+    if (prevEnd !== null && mins(n.window[0]) !== prevEnd) { bad(label + ": gap in the do-nothing chain before " + id); }
+    prevEnd = mins(n.window[1]);
+    id = n.children.expired;
   }
-  console.log((r.id === s.expect ? "ok   " : "FAIL ") + s.now + "  " + s.name + "  ->  " + r.id + "  [" + r.cards.join(", ") + "]");
-});
+  if (prevEnd !== mins("23:59")) { bad(label + ": the do-nothing chain ends at " + Model.hhmm(prevEnd)); }
+}
 
-// a picked card is gone, passed-over cards stay, follow-ups join them, and carry expires with its node
-(function () {
-  const ctx = day.context;
-  const morning = nodes.n_morning.cards;
-  const carry = morning.filter(function (x) { return x.id !== "m1"; });
-  const ids = function (v) { return v.cards.map(function (x) { return x.id; }).join(","); };
-  const after = Model.advance(day, { node: "n_midmorning", carry: carry, carryUntil: mins("10:00") }, mins("08:30"), ctx, {}, { coffee_window: true });
-  const later = Model.advance(day, { node: "n_midmorning", carry: carry, carryUntil: mins("10:00") }, mins("10:10"), ctx, {}, { coffee_window: true });
-  const empty = Model.advance(day, { node: "n_open_am" }, mins("09:00"), ctx, {}, { tea_window: true, read_20: true, sketch_15: true });
-  const checks = [
-    ["after a pick at 8:30", ids(after), "m2,m3,m4,mm1"],
-    ["carry gone once its node ends", ids(later), "mm1,mm2,mm3"],
-    ["exhausted node stays put when it loops to itself", ids(empty) + "|" + empty.id, "|n_open_am"]
-  ];
-  checks.forEach(function (t) {
-    if (t[1] !== t[2]) { bad("carry test '" + t[0] + "': expected " + t[2] + ", got " + t[1]); }
-    console.log((t[1] === t[2] ? "ok   " : "FAIL ") + t[0] + "  ->  " + t[1]);
+// follow a list of picks from the first screen, then ask what is current at a given time
+function after(bundle, picks, now) {
+  let id = bundle.root;
+  picks.forEach(function (p) {
+    const next = bundle.nodes[id].children["picked:" + p];
+    if (!next) { bad("cannot pick " + p + " at " + id); return; }
+    id = next;
   });
-})();
+  const v = Model.advance(bundle, { node: id }, mins(now));
+  return { title: v.node ? v.node.title : null, cards: v.cards.map(function (c) { return c.id; }), node: v.node };
+}
+
+const normal = Planner.plan(Sample.context, { energy: "normal" });
+const low = Planner.plan(Sample.context, { energy: "low" });
+const noEvents = Planner.plan(ctxWith({ calendar: [] }), { energy: "normal" });
+const allRain = Planner.plan(ctxWith({ weather: [{ from: "00:00", to: "23:59", sky: "rain" }] }), { energy: "normal" });
+checkTree("sample", normal);
+checkTree("low energy", low);
+checkTree("no events", noEvents);
+checkTree("all rain", allRain);
+
+const list = function (r) { return r.cards.join(",") || "(quiet: " + r.node.quiet + ")"; };
+const tests = [
+  ["08:10 first screen", after(normal, [], "08:10"), "coffee_window,eat_first,stretch_shower"],
+  ["after coffee", after(normal, ["coffee_window"], "08:10"), "eat_first,stretch_shower,write_25,putoff_ten"],
+  ["after shower: dressing comes next, no perfume yet", after(normal, ["stretch_shower"], "08:10"), "coffee_window,eat_first,get_dressed"],
+  ["after shower and dressing", after(normal, ["stretch_shower", "get_dressed"], "08:10"), "coffee_window,eat_first,perfume,market_flowers"],
+  ["reroll after coffee shows the next set", (function () {
+    const n = normal.nodes[normal.nodes[normal.root].children["picked:coffee_window"]];
+    return { cards: normal.nodes[n.children.reroll].cards, node: n };
+  })(), "two_emails,tidy_surface,sketch_15,read_20"],
+  ["11:40 before the appointment", after(normal, [], "11:40"), "eat_before_out,bag_keys,getting_ready"],
+  ["after getting ready: leaving early is next", after(normal, [], "11:40").node && (function () {
+    const n = normal.nodes[Model.advance(normal, { node: normal.root }, mins("11:40")).id];
+    const nx = normal.nodes[n.children["picked:getting_ready"]];
+    return { cards: nx.cards, node: nx };
+  })(), "eat_before_out,bag_keys,leave_early"],
+  ["12:40 during the appointment", after(normal, [], "12:40"), "directions"],
+  ["14:10 dry afternoon", after(normal, [], "14:10"), "write_25,sketch_15,park_walk,tea_window"],
+  ["14:10 with rain all day has no park walk", after(allRain, [], "14:10"), "write_25,sketch_15,tea_window,walk_ten"],
+  ["14:10 low energy starts with lying down", after(low, [], "14:10"), "lie_down_20,tea_window,walk_ten,read_20"],
+  ["20:30 night is quiet", after(normal, [], "20:30"), ""],
+  ["no appointment: 11:40 is still morning", after(noEvents, [], "11:40"), "coffee_window,eat_first,stretch_shower"]
+];
+tests.forEach(function (t) {
+  const got = t[1].cards.join(",");
+  const ok = got === t[2];
+  if (!ok) { bad("test '" + t[0] + "': expected [" + t[2] + "], got [" + got + "]"); }
+  console.log((ok ? "ok   " : "FAIL ") + t[0] + "  ->  " + (got || "(quiet)"));
+});
+const titles = [
+  ["11:40", normal, "Before 12:30"], ["12:40", normal, "Appointment"], ["14:10", normal, "Afternoon"], ["11:40", noEvents, "Morning"]
+];
+titles.forEach(function (t) {
+  const got = after(t[1], [], t[0]).title;
+  if (got !== t[2]) { bad("title at " + t[0] + ": expected " + t[2] + ", got " + got); }
+  console.log((got === t[2] ? "ok   " : "FAIL ") + "title at " + t[0] + "  ->  " + got);
+});
 
 console.log("");
-console.log(Object.keys(nodes).length + " nodes, " + Object.keys(seenCards).length + " cards, " + Object.keys(bank).length + " options");
+console.log(Object.keys(normal.nodes).length + " nodes, " + Object.keys(normal.cards).length + " cards (normal energy); " + Object.keys(low.nodes).length + " nodes (low energy)");
 if (problems.length) {
   console.log("\n" + problems.length + " problem(s):");
-  problems.forEach(function (p) { console.log(" - " + p); });
+  problems.slice(0, 25).forEach(function (p) { console.log(" - " + p); });
+  if (problems.length > 25) { console.log(" ... and " + (problems.length - 25) + " more"); }
   process.exit(1);
 }
 console.log("all checks passed");

@@ -1,10 +1,10 @@
 # Data model
 
-Working draft. The server plans a day as a small tree of offers (a bundle). The web app walks the tree using the clock and what the user does. The app never needs to know why a branch exists.
+Working draft. The server plans a day as a tree of offers (a bundle). The web app only walks the tree, using the clock and what the user does. The app never needs to know why a branch exists, what needs what, or what the weather allows. In this prototype `js/planner.js` plays the server.
 
 ## Rules the model is built around
 
-1. **The UI is a tree walker.** It shows the current node, follows an outcome to a child, and reports events. Goals, habits and horizon balance stay on the server.
+1. **The UI is a tree walker.** It shows the current node, follows an outcome to a child, and reports events. Goals, habits, order, weather, energy and horizon balance are all decided when the tree is planned.
 2. **Inaction is an outcome.** Not choosing is recorded and has its own child.
 3. **Time is an input.** Nothing reads the system clock directly. Everything takes `now`, so the test scrubber can move it.
 4. **Opaque tags.** `tags` and `signal` are carried and echoed back in events. The UI does not interpret them.
@@ -17,21 +17,21 @@ Working draft. The server plans a day as a small tree of offers (a bundle). The 
 | `bundle_id`, `schema` | Identity and format version |
 | `generated_at`, `valid_until` | When to ask the server for more |
 | `root` | First node id |
-| `assumptions` | The context the bundle was planned against: day, location band, calendar hash, `profile_version`, and the state of each lens that currently matters for the day (enabled, with non-trivial learned relevance for the slice). Other lenses are left out, so a changing moon never invalidates the bundle of someone whose picks don't follow it |
+| `cards` | Map of card id to card, so a card used in many nodes is stored once |
 | `nodes` | Map of node id to node |
+| `assumptions` | The context the bundle was planned against: day, energy, the day's blocks, `profile_version`, and the state of each lens that currently matters for the day. When one of these changes, the app asks for a new bundle. Other lenses are left out, so a changing moon never invalidates the bundle of someone whose picks don't follow it |
 
 ## Node (one offer)
 
 | Field | Meaning |
 |---|---|
 | `title` | Short heading for the top band, written by the server ("Before 12:30") |
-| `window` | `[start, end]` local times the node is on screen |
-| `valid_if` | Conditions checked against live context: `free_min_gte`, `weather` (list), `daylight`, `event_within_min_lte` |
-| `on_invalid` | Node to show instead when `valid_if` fails |
-| `cards` | 1 to 4 cards |
-| `variants` | Optional alternates chosen by local state, each with `when` and `cards` |
-| `reroll` | Whether "Something else" is shown |
-| `children` | Outcome key to node id. Keys: `picked:<card id>`, `expired`, `reroll`. A `*` key is a default for `picked:*` |
+| `window` | `[start, end]` local times of the block the node belongs to |
+| `cards` | Up to 4 card ids, already in the order to show them. All conditions have been applied by the planner |
+| `quiet` | Text to show when there are no cards ("Nothing needed tonight.") |
+| `reroll` | Whether "Show different options" is available |
+| `children` | Outcome key to node id. Keys: `picked:<card id>`, `expired`, `reroll`. Every card has its own child, and a picked card never appears in it |
+| `facts` | What is true at this node (for the planner and the checker). The app ignores it |
 
 ### Card
 
@@ -48,19 +48,28 @@ Working draft. The server plans a day as a small tree of offers (a bundle). The 
 
 ## Which node is current
 
-1. Start at `root`, or at the node reached by the last outcome.
+1. Start at the cursor's node, or at `root`.
 2. If `now` is past `window[1]`, follow `expired` (and keep following while the next window has also ended). This is how the scrubber and a closed app both move through the day.
-3. If `valid_if` fails against live context, jump to `on_invalid`.
-4. If the node has `variants` and the local state matches one, use its cards.
-5. If there is no next node, use the local fallback set and ask for a new bundle.
+3. Show the node's cards. If it has none, show its `quiet` text.
 
-### After a pick
+That is all the app does. After a pick the cursor moves to the pick's child, and what was just picked (label, steps, end time) goes to the top band as context. Because each card has its own child, the screen always has something to choose, the picked card is gone, and the next cards follow from what was done.
 
-There is always something to choose. The picked card is gone: its option goes into `taken` for the day and is hidden everywhere. The cards that were passed over stay on screen in place (`cursor.carry`, kept until the end of the node they came from), and the pick's follow-up cards (its `picked:` child) are added after them, up to four. A node reached by a pick is shown immediately whatever its `window` says. If every card is taken and the node does not lead anywhere else, the screen reads "Nothing needed right now." until the clock moves on. What was just picked, with its label, steps and end time, goes to the top band as context.
+## Planner (the server's job)
+
+The planner searches the day and writes one node per situation.
+
+- **Blocks:** the day is cut into blocks (morning, afternoon, evening, night) and the calendar adds a "before" and a "during" block around each event.
+- **Options** say which blocks they can appear in, with a rank per block, what must already be true (`needs`), what they make true (`gives`), and when to skip them (`skipIf`). A flag marks options that are demanding, gentle, or only for low energy.
+- **Facts** are what the user has done. `did_<option>` stops an option repeating within a block. `dressed` and `fed` carry into later blocks; the rest are dropped when a block ends.
+- **Conditions** are applied here, not in the app: an option that needs dry weather or daylight appears only if the block is mostly dry or light, and low energy removes demanding options and puts gentle ones first.
+- **Paging:** a node shows the next four candidates by rank. If there are more, `reroll` leads to a node with the following four.
+- **Depth:** a block stops offering options after four picks and goes quiet until the block ends.
+
+This prototype plans the whole tree up front, about 1,100 nodes for the sample day. A real server would plan a branch or two ahead and refresh as picks, time and context invalidate what it planned.
 
 ## Option bank (server side, copied locally for fallback)
 
-`id`, `text`, `kind`, `goal`, `horizon`, `duration_min`, `requires` (same predicates as `valid_if`), `signal`, `cooldown_days`, `daily_cap_group`, `status` (active, paused, retired), `paused_until`, `why`.
+`id`, `text`, `label`, `kind`, `goal`, `horizon`, `duration_min`, `signal`, per-block `rank` and `needs`, `gives`, `skipIf`, weather and daylight conditions, energy flags, `status` (active, paused, retired), `paused_until`, `why`.
 
 ## Local state
 
@@ -68,8 +77,8 @@ There is always something to choose. The picked card is gone: its option goes in
 |---|---|
 | Context snapshot | `now`, calendar free blocks and next event, weather, daylight, moon, coarse location. Optional cycle phase, device-only by default |
 | State estimate | `energy`, `mood`, `social`, `overwhelm`, each with a decay. Updated from the `signal` of picked cards |
-| Cursor | Current node, bundle id, path taken, time entered, `carry` (cards passed over) and `carryUntil` |
-| Taken and activity | `taken` (options picked today, hidden everywhere) and the current activity (label, steps, end time) for the top band |
+| Cursor | Current node and the time it was set. If a new bundle no longer contains the node, the app starts again from `root` and follows `expired` |
+| Activity | The last pick (label, steps, end time) for the top band |
 | View counters | Per card per node: views and dwell time |
 | Guardrails | `last_shown` per option, daily caps (flirty at most 1 per node and 2 per day), paused options, trimmed branches, never-show list |
 | Outbox | Pending events with idempotency keys |
