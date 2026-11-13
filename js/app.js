@@ -177,18 +177,26 @@
       '<p class="sub">' + esc(sub) + "</p></header>";
   }
 
+  // While cards leave and the next set is on its way, the box keeps its height so nothing jumps.
+  function boxStyle() { return ui.boxHeight ? ' style="min-height:' + ui.boxHeight + 'px"' : ""; }
+
   function midHtml(x, cards) {
     var v = x.view;
     if (S.dayMode) { return '<div class="card still">Nothing needed today.</div><div><button class="pill" data-act="enddaymode">End day mode</button></div>'; }
     if (!v.node) { return '<div class="card still">Nothing needed.</div>'; }
     if (ui.exiting) {
       var ex = ui.exiting;
-      return '<div class="stack">' + ex.cards.map(function (c) {
-        var cls = "card ghost" + (ex.pickedId === c.id ? " chosen" : ex.goneId === c.id ? " gone" : ex.pickedId ? " fade" : "");
-        return '<div class="' + cls + '">' + esc(c.text) + "</div>";
+      return '<div class="stack"' + boxStyle() + '>' + ex.cards.map(function (c) {
+        var cls = "card ghost", style = "";
+        if (ex.pickedId === c.id) {
+          cls += ex.how === "swipe" ? " slide-right" : " keep";
+          if (ex.how === "swipe" && ex.dx) { style = ' style="--x:' + Math.round(ex.dx) + 'px;--r:' + (ex.dx / 50).toFixed(1) + 'deg"'; }
+        } else if (ex.goneId === c.id) { cls += " gone"; }
+        else if (ex.pickedId) { cls += " fade"; }
+        return '<div class="' + cls + '"' + style + '>' + esc(c.text) + "</div>";
       }).join("") + "</div>";
     }
-    if (ui.hold) { return ""; }
+    if (ui.hold) { return '<div class="stack empty"' + boxStyle() + "></div>"; }
     return '<div class="stack' + (ui.enterOnce ? " enter" : "") + '">' + cards.map(function (c) {
       if (c.tags && c.tags.kind === "quiet") { return '<div class="card still">' + esc(c.text) + "</div>"; }
       var away = ui.reject && ui.reject.id === c.id ? " away" : "";
@@ -337,7 +345,7 @@
     clearTimeout(holdTimer); ui.hold = false;
   }
 
-  function pick(id) {
+  function pick(id, how, dx) {
     var x = compute();
     var cards = cardsFor(x);
     var card = cards.filter(function (c) { return c.id === id; })[0];
@@ -352,12 +360,15 @@
     S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
     S.cursor = { node: child || x.view.id, setAt: x.m };
     saveAll();
-    ui.exiting = { cards: cards.filter(function (c) { return !(c.tags && c.tags.kind === "quiet"); }), pickedId: card.id };
+    var box = document.querySelector(".mid .stack");
+    ui.boxHeight = box ? box.offsetHeight : 0;
+    how = how || "tap";
+    ui.exiting = { cards: cards.filter(function (c) { return !(c.tags && c.tags.kind === "quiet"); }), pickedId: card.id, how: how, dx: dx || 0 };
     ui.titleNew = true;
     clearTimeout(holdTimer);
     clearTimeout(exitTimer);
     ui.hold = !!test.pause;
-    exitTimer = setTimeout(function () { ui.exiting = null; if (!ui.hold) { ui.enterOnce = true; } render(); }, 450);
+    exitTimer = setTimeout(function () { ui.exiting = null; if (!ui.hold) { ui.enterOnce = true; } render(); }, how === "swipe" ? 450 : 900);
     if (ui.hold) { holdTimer = setTimeout(function () { ui.hold = false; ui.enterOnce = true; render(); }, 3000); }
     render();
   }
@@ -388,6 +399,8 @@
     if (text) { notes.push({ t: Date.now(), text: text, about: card.option }); }
     S.cursor = { node: sess.reject(x.view.id, card.option), setAt: x.m };
     ui.sheet = null; ui.reject = null; ui.noteSent = false; ui.draft = "";
+    var gbox = document.querySelector(".mid .stack");
+    ui.boxHeight = gbox ? gbox.offsetHeight : 0;
     ui.exiting = { cards: cards.filter(function (c) { return !(c.tags && c.tags.kind === "quiet"); }), goneId: card.id };
     clearTimeout(exitTimer);
     exitTimer = setTimeout(function () { ui.exiting = null; ui.enterOnce = true; render(); }, 450);
@@ -426,7 +439,7 @@
     if (!d.moved) { return; }
     swallowClick = true;
     setTimeout(function () { swallowClick = false; }, 60);
-    if (!cancelled && d.dx > 90) { pick(d.id); }
+    if (!cancelled && d.dx > 90) { pick(d.id, "swipe", d.dx); }
     else if (!cancelled && d.dx < -90) { startReject(d.id); }
     else { d.el.classList.remove("drag", "right", "left"); d.el.style.transform = ""; }
   }
@@ -435,7 +448,7 @@
   app.addEventListener("keydown", function (e) {
     var el = cardEl(e);
     if (!el || ui.hold || ui.exiting || ui.sheet) { return; }
-    if (e.key === "ArrowRight") { e.preventDefault(); pick(el.getAttribute("data-id")); }
+    if (e.key === "ArrowRight") { e.preventDefault(); pick(el.getAttribute("data-id"), "swipe", 0); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); startReject(el.getAttribute("data-id")); }
   });
 
@@ -469,7 +482,7 @@
     var el = e.target.closest("[data-act]");
     if (!el || el.disabled) { return; }
     var act = el.getAttribute("data-act");
-    if (act === "pick") { pick(el.getAttribute("data-id")); return; }
+    if (act === "pick") { pick(el.getAttribute("data-id"), "tap"); return; }
     if (act === "reroll") { reroll(); return; }
     if (act === "rejectmore") { if (ui.reject) { ui.reject.step = "more"; render(); } return; }
     if (act === "rejectquiet") { doReject("not_feeling_it", ""); return; }
