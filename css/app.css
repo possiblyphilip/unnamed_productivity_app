@@ -103,7 +103,7 @@ button.card:focus-visible, .pill:focus-visible, .row-btn:focus-visible, .integ:f
 .stack.enter .card { animation: fadeIn 0.7s ease both; }
 .top h1.new { animation: fadeIn 0.5s ease both; }
 .sheet .ask { margin: 0 0 4px 4px; font-size: 0.95rem; }
-@keyframes slideRight { from { transform: translateX(var(--x, 0px)) rotate(var(--r, 0deg)); opacity: 1; } to { transform: translateX(130%) rotate(8deg); opacity: 0; } }
+@keyframes slideRight { from { transform: translateX(var(--x, 0px)); opacity: 1; } to { transform: translateX(130%); opacity: 0; } }
 @keyframes fadeOut { to { opacity: 0; } }
 @keyframes slideAway { to { transform: translateX(-110%); opacity: 0; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

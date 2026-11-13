@@ -222,7 +222,7 @@
         var cls = "card ghost", style = "";
         if (ex.pickedId === c.id) {
           cls += ex.how === "swipe" ? " slide-right" : " keep";
-          if (ex.how === "swipe" && ex.dx) { style = ' style="--x:' + Math.round(ex.dx) + 'px;--r:' + (ex.dx / 50).toFixed(1) + 'deg"'; }
+          if (ex.how === "swipe" && ex.dx) { style = ' style="--x:' + Math.round(ex.dx) + 'px"'; }
         } else if (ex.goneId === c.id) { cls += " gone"; }
         else if (ex.pickedId) { cls += " fade"; }
         return '<div class="' + cls + '"' + style + '>' + esc(c.text) + "</div>";
@@ -280,6 +280,16 @@
     return '<div class="scrim" data-act="closesheet"></div><div class="sheet">' + body + '<button class="quiet" data-act="closesheet">Close</button></div>';
   }
 
+  // A web page cannot hide the browser's address bar by itself. Added to the home screen it opens without
+  // one (see manifest.webmanifest). Where the browser allows it, this goes full screen instead.
+  function fullscreenOk() { return !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false); }
+  function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) { document.exitFullscreen(); }
+      else { document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch(function () { /* not allowed */ }); }
+    } catch (e) { /* not allowed */ }
+  }
+
   function menuHtml() {
     if (!ui.menu) { return ""; }
     var item = function (id, label) {
@@ -288,6 +298,7 @@
     return '<button type="button" class="scrim" data-act="navmenu" aria-label="Close menu"></button>' +
       '<nav class="menu" aria-label="Menu"><button type="button" class="hamburger" data-act="navmenu" aria-label="Close menu"><span></span><span></span><span></span></button>' +
       '<p class="horizon">Menu</p>' + item("today", "Today") + item("integrations", "Integrations") +
+      (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
   }
 
@@ -471,7 +482,7 @@
       try { drag.el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointers cannot be captured */ }
     }
     drag.dx = dx;
-    drag.el.style.transform = "translateX(" + dx + "px) rotate(" + (dx / 50) + "deg)";
+    drag.el.style.transform = "translateX(" + dx + "px)";
     drag.el.classList.toggle("right", dx > 50);
     drag.el.classList.toggle("left", dx < -50);
   });
@@ -547,6 +558,7 @@
       ui.draft = ""; ui.noteSent = true;
     }
     else if (act === "navmenu") { ui.menu = !ui.menu; }
+    else if (act === "fullscreen") { toggleFullscreen(); ui.menu = false; }
     else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.menu = false; }
     else if (act === "lens") { var lid = el.getAttribute("data-lens"); lenses[lid].enabled = !lenses[lid].enabled; }
     else if (act === "lenshide") { var hid = el.getAttribute("data-lens"); lenses[hid].hidden = !lenses[hid].hidden; }
