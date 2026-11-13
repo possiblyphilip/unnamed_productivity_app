@@ -40,7 +40,8 @@ Working draft. The server plans a day as a small tree of offers (a bundle). The 
 | `id`, `option` | Card id and the option-bank id it came from |
 | `text` | What the user reads |
 | `steps` | Optional ordered checklist |
-| `duration_min` | How long the activity takes. After a pick, the child enters at the later of `window[0]` and pick time plus duration |
+| `label` | Short name used in the top band after a pick ("Coffee by the window") |
+| `duration_min` | How long the activity takes. The top band reads "Now: <label>, until <time>" for that long, then "Last: <label>" |
 | `tags` | `horizon` (short, medium, long), `goal`, `kind` (routine, variation, wild, checklist, info, quiet, flirty), `novel` |
 | `signal` | Weights toward the state estimate, for example `{"energy": 1, "social": -1}` |
 | `why` | Optional. Hidden unless the user asks |
@@ -53,6 +54,10 @@ Working draft. The server plans a day as a small tree of offers (a bundle). The 
 4. If the node has `variants` and the local state matches one, use its cards.
 5. If there is no next node, use the local fallback set and ask for a new bundle.
 
+### After a pick
+
+There is always something to choose. The picked card is gone: its option goes into `taken` for the day and is hidden everywhere. The cards that were passed over stay on screen in place (`cursor.carry`, kept until the end of the node they came from), and the pick's follow-up cards (its `picked:` child) are added after them, up to four. A node reached by a pick is shown immediately whatever its `window` says. If every card is taken and the node does not lead anywhere else, the screen reads "Nothing needed right now." until the clock moves on. What was just picked, with its label, steps and end time, goes to the top band as context.
+
 ## Option bank (server side, copied locally for fallback)
 
 `id`, `text`, `kind`, `goal`, `horizon`, `duration_min`, `requires` (same predicates as `valid_if`), `signal`, `cooldown_days`, `daily_cap_group`, `status` (active, paused, retired), `paused_until`, `why`.
@@ -63,7 +68,8 @@ Working draft. The server plans a day as a small tree of offers (a bundle). The 
 |---|---|
 | Context snapshot | `now`, calendar free blocks and next event, weather, daylight, moon, coarse location. Optional cycle phase, device-only by default |
 | State estimate | `energy`, `mood`, `social`, `overwhelm`, each with a decay. Updated from the `signal` of picked cards |
-| Cursor | Current node, bundle id, path taken, time entered |
+| Cursor | Current node, bundle id, path taken, time entered, `carry` (cards passed over) and `carryUntil` |
+| Taken and activity | `taken` (options picked today, hidden everywhere) and the current activity (label, steps, end time) for the top band |
 | View counters | Per card per node: views and dwell time |
 | Guardrails | `last_shown` per option, daily caps (flirty at most 1 per node and 2 per day), paused options, trimmed branches, never-show list |
 | Outbox | Pending events with idempotency keys |

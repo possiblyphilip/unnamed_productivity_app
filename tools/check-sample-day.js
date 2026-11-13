@@ -94,6 +94,26 @@ day.scenarios.forEach(function (s) {
   console.log((r.id === s.expect ? "ok   " : "FAIL ") + s.now + "  " + s.name + "  ->  " + r.id + "  [" + r.cards.join(", ") + "]");
 });
 
+// a picked card is gone, passed-over cards stay, follow-ups join them, and carry expires with its node
+(function () {
+  const ctx = day.context;
+  const morning = nodes.n_morning.cards;
+  const carry = morning.filter(function (x) { return x.id !== "m1"; });
+  const ids = function (v) { return v.cards.map(function (x) { return x.id; }).join(","); };
+  const after = Model.advance(day, { node: "n_midmorning", carry: carry, carryUntil: mins("10:00") }, mins("08:30"), ctx, {}, { coffee_window: true });
+  const later = Model.advance(day, { node: "n_midmorning", carry: carry, carryUntil: mins("10:00") }, mins("10:10"), ctx, {}, { coffee_window: true });
+  const empty = Model.advance(day, { node: "n_open_am" }, mins("09:00"), ctx, {}, { tea_window: true, read_20: true, sketch_15: true });
+  const checks = [
+    ["after a pick at 8:30", ids(after), "m2,m3,m4,mm1"],
+    ["carry gone once its node ends", ids(later), "mm1,mm2,mm3"],
+    ["exhausted node stays put when it loops to itself", ids(empty) + "|" + empty.id, "|n_open_am"]
+  ];
+  checks.forEach(function (t) {
+    if (t[1] !== t[2]) { bad("carry test '" + t[0] + "': expected " + t[2] + ", got " + t[1]); }
+    console.log((t[1] === t[2] ? "ok   " : "FAIL ") + t[0] + "  ->  " + t[1]);
+  });
+})();
+
 console.log("");
 console.log(Object.keys(nodes).length + " nodes, " + Object.keys(seenCards).length + " cards, " + Object.keys(bank).length + " options");
 if (problems.length) {

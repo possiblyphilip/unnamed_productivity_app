@@ -70,8 +70,8 @@
     var c = ctxNow();
     if (S.day !== todayKey()) { S = { day: todayKey() }; }
     if (S.cursor && S.cursor.setAt > m) { S = { day: S.day, dayMode: S.dayMode }; }
-    var cursor = S.cursor || { node: bundle.root, enterAt: 0, setAt: 0 };
-    var view = Model.advance(bundle, cursor, m, c, { energy: test.energy });
+    var cursor = S.cursor || { node: bundle.root, setAt: 0 };
+    var view = Model.advance(bundle, cursor, m, c, { energy: test.energy }, S.taken || {});
     return { m: m, c: c, cursor: cursor, view: view, states: lensStates(c), slice: Learner.sliceOf(dowNow(), m) };
   }
 
@@ -130,7 +130,9 @@
       sub = "Day mode: " + S.dayMode.label.toLowerCase() + ". Ends at midnight.";
     } else {
       title = v.node ? v.node.title : "Today";
-      if (S.lastPick) { sub = "Last: " + S.lastPick.text + (v.skipped.length ? " Nothing picked since." : ""); }
+      var a = S.activity;
+      if (a && x.m < a.until) { sub = "Now: " + a.label + (a.steps ? " (" + a.steps.join(", ").toLowerCase() + ")" : "") + ", until " + Model.clock(a.until) + "."; }
+      else if (a) { sub = "Last: " + a.label + "." + (v.skipped.length ? " Nothing picked since." : ""); }
       else if (v.skipped.length) { sub = "Nothing picked yet today."; }
       else { sub = v.id === bundle.root ? "Start of day." : "Nothing picked yet today."; }
     }
@@ -143,19 +145,6 @@
     var v = x.view;
     if (S.dayMode) { return '<div class="card still">Nothing needed today.</div><div><button class="pill" data-act="enddaymode">End day mode</button></div>'; }
     if (!v.node) { return '<div class="card still">Nothing needed.</div>'; }
-    if (v.waiting) {
-      var p = S.cursor && S.cursor.picked;
-      if (v.waiting.inProgress && p) {
-        var steps = "";
-        if (p.steps && p.steps.length) {
-          steps = '<ul class="steps">' + p.steps.map(function (s, i) {
-            return '<li><label><input type="checkbox" data-check="' + i + '"' + ((S.checks || {})[i] ? " checked" : "") + "> " + esc(s) + "</label></li>";
-          }).join("") + "</ul>";
-        }
-        return '<div class="doing"><p class="first">' + esc(p.text) + '</p><p class="muted">Options return at ' + Model.clock(v.waiting.until) + ".</p>" + steps + '<button class="pill" data-act="done">Done</button></div>';
-      }
-      return '<p class="empty">' + (p ? "Next" : "First") + " options at " + Model.clock(v.waiting.until) + ".</p>";
-    }
     return '<div class="stack">' + cards.map(function (c) {
       if (c.tags && c.tags.kind === "quiet") { return '<div class="card still">' + esc(c.text) + "</div>"; }
       return '<button class="card" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
@@ -169,7 +158,7 @@
 
   function rerollState(x) {
     var n = x.view.node;
-    if (!n || !n.reroll || x.view.waiting || S.dayMode) { return "Not available on this screen"; }
+    if (!n || !n.reroll || S.dayMode) { return "Not available on this screen"; }
     if ((S.rerolls || {})[x.view.id] >= 1) { return "Already used on this screen"; }
     if ((S.rerollsToday || 0) >= 3) { return "That's three today. Tell it what you're after instead."; }
     return "";
@@ -293,9 +282,14 @@
     });
     if (offers.length > 3000) { offers = offers.slice(offers.length - 3000); }
     var child = Model.childFor(x.view.node, card);
-    S.lastPick = { text: card.text, at: x.m };
-    S.checks = {};
-    S.cursor = { node: child, enterAt: x.m + (card.duration_min || 0), setAt: x.m, picked: { id: card.id, text: card.text, steps: card.steps || null } };
+    S.taken = S.taken || {};
+    S.taken[card.option] = true;
+    S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
+    S.cursor = {
+      node: child === null ? x.view.id : child, setAt: x.m,
+      carry: cards.filter(function (c) { return c.id !== card.id && !(c.tags && c.tags.kind === "quiet"); }),
+      carryUntil: Model.mins(x.view.node.window[1])
+    };
     saveAll();
     render();
   }
@@ -306,7 +300,7 @@
     S.rerolls = S.rerolls || {};
     S.rerolls[x.view.id] = (S.rerolls[x.view.id] || 0) + 1;
     S.rerollsToday = (S.rerollsToday || 0) + 1;
-    S.cursor = { node: x.view.node.children.reroll, enterAt: 0, setAt: x.m, picked: null };
+    S.cursor = { node: x.view.node.children.reroll, setAt: x.m };
     ui.sheet = null;
     saveAll();
     render();
@@ -346,7 +340,6 @@
       notes.push({ t: Date.now(), text: text });
       ui.draft = ""; ui.noteSent = true;
     }
-    else if (act === "done") { if (S.cursor) { S.cursor.enterAt = nowMin(); } }
     else if (act === "navmenu") { ui.menu = !ui.menu; }
     else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.menu = false; }
     else if (act === "lens") { var lid = el.getAttribute("data-lens"); lenses[lid].enabled = !lenses[lid].enabled; }
@@ -402,9 +395,6 @@
       else if (key === "live") { test.live = val === "1"; if (test.live) { loadLive(); } }
       else if (key === "energy") { test.energy = val; }
       else { test[key] = Number(val); }
-    } else if (t.getAttribute("data-check") !== null) {
-      S.checks = S.checks || {};
-      S.checks[t.getAttribute("data-check")] = t.checked;
     } else { return; }
     saveAll();
     render();

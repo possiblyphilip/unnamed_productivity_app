@@ -48,8 +48,21 @@ option("prep_dinner", { text: "Chop what you need for dinner now", kind: "variat
 option("chicken_bowl", { text: "Leftover chicken bowl, fifteen minutes", goal: "g_nutrition", duration_min: 15 });
 option("soup_bread", { text: "Something warm and light: soup and bread", kind: "variation", goal: "g_nutrition", duration_min: 20 });
 option("new_recipe", { text: "Cook something you haven't made before", kind: "wild", goal: "g_joy", horizon: "medium", duration_min: 45, cooldown_days: 10 });
+option("lay_out", { text: "Lay out tomorrow's clothes", goal: "g_admin", duration_min: 10, signal: { overwhelm: -1 } });
 option("quiet_now", { text: "Nothing needed right now.", kind: "quiet", duration_min: 0 });
 option("quiet_night", { text: "Nothing needed tonight.", kind: "quiet", duration_min: 0 });
+
+const labels = {
+  coffee_window: "Coffee by the window", stretch_shower: "Stretch and shower", market_flowers: "Walk to the market",
+  perfume: "Perfume on", eat_first: "Eggs and toast", putoff_ten: "Ten minutes on the thing you were putting off",
+  tidy_surface: "Clearing a surface", write_25: "Writing", two_emails: "Two emails", walk_block: "Walk around the block",
+  eat_before_out: "Eating before heading out", bag_keys: "Bag and keys", getting_ready: "Getting ready",
+  leave_early: "Leaving early by bus", directions: "Heading to the appointment", sketch_15: "Sketching",
+  park_walk: "Walk to the park", coffee_light: "Coffee out", lie_down_20: "Lying down, no screen", tea_window: "Tea by the window",
+  walk_ten: "Short walk", read_20: "Reading", prep_dinner: "Chopping for dinner", chicken_bowl: "Chicken bowl",
+  soup_bread: "Soup and bread", new_recipe: "Cooking something new", lay_out: "Laying out clothes"
+};
+Object.keys(labels).forEach(function (id) { bank[id].label = labels[id]; });
 
 const cards = {};
 // Cards are built from the bank so text and tags stay in one place.
@@ -60,6 +73,7 @@ function card(cardId, optionId, extra) {
     id: cardId,
     option: optionId,
     text: o.text,
+    label: o.label || o.text,
     duration_min: o.duration_min,
     tags: { horizon: o.horizon, goal: o.goal, kind: o.kind, novel: o.kind === "wild" },
     signal: o.signal
@@ -94,19 +108,19 @@ node("n_midmorning", ["07:45", "11:30"], [
   card("mm1", "write_25"),
   card("mm2", "two_emails"),
   card("mm3", "walk_block")
-], { children: { "picked:*": "n_getready", expired: "n_getready" } });
+], { children: { "picked:*": "n_open_am", expired: "n_getready" } });
 
 node("n_catchup", ["10:00", "11:30"], [
   card("c1", "eat_before_out"),
   card("c2", "bag_keys")
-], { children: { "picked:*": "n_getready", expired: "n_getready" } });
+], { children: { "picked:*": "n_open_am", expired: "n_getready" } });
 
 node("n_getready", ["11:30", "12:20"], [
   card("g1", "getting_ready", { steps: ["Dressed", "Keys", "Bag", "Phone charged"] }),
   card("g2", "leave_early")
 ], { valid_if: { event_within_min_lte: 60 }, on_invalid: "n_afternoon", children: { "picked:*": "n_appointment", expired: "n_appointment" } });
 
-node("n_appointment", ["12:20", "13:30"], [card("a1", "directions")], { children: { "picked:*": "n_afternoon", expired: "n_afternoon" } });
+node("n_appointment", ["12:20", "13:30"], [card("a1", "directions")], { children: { "picked:*": "n_appointment", expired: "n_afternoon" } });
 
 node("n_afternoon", ["13:30", "17:00"], [
   card("p1", "write_25"),
@@ -121,14 +135,14 @@ node("n_afternoon", ["13:30", "17:00"], [
     when: { energy: "low" },
     cards: [card("pl1", "lie_down_20"), card("pl2", "tea_window"), card("pl3", "walk_ten")]
   }],
-  children: { "picked:*": "n_evening", expired: "n_evening", reroll: "n_afternoon_wet" }
+  children: { "picked:*": "n_afternoon_more", expired: "n_evening", reroll: "n_afternoon_wet" }
 });
 
 node("n_afternoon_wet", ["13:30", "17:00"], [
   card("pw1", "sketch_15"),
   card("pw2", "read_20"),
   card("pw3", "prep_dinner")
-], { reroll: true, children: { "picked:*": "n_evening", expired: "n_evening", reroll: "n_quiet_pm" } });
+], { reroll: true, children: { "picked:*": "n_afternoon_more", expired: "n_evening", reroll: "n_quiet_pm" } });
 
 node("n_quiet_pm", ["13:30", "17:00"], [card("qp1", "quiet_now")], { children: { "picked:*": "n_evening", expired: "n_evening" } });
 
@@ -136,16 +150,34 @@ node("n_evening", ["17:00", "20:00"], [
   card("e1", "chicken_bowl"),
   card("e2", "soup_bread"),
   card("e3", "new_recipe")
-], { children: { "picked:*": "n_night", expired: "n_night" } });
+], { children: { "picked:*": "n_evening_more", expired: "n_night" } });
+
+node("n_open_am", ["07:45", "11:30"], [
+  card("oa1", "tea_window"),
+  card("oa2", "read_20"),
+  card("oa3", "sketch_15")
+], { children: { "picked:*": "n_open_am", expired: "n_getready" } });
+
+node("n_afternoon_more", ["13:30", "17:00"], [
+  card("am1", "tea_window"),
+  card("am2", "walk_ten"),
+  card("am3", "read_20")
+], { children: { "picked:*": "n_afternoon_more", expired: "n_evening" } });
+
+node("n_evening_more", ["17:00", "20:00"], [
+  card("em1", "read_20"),
+  card("em2", "lay_out")
+], { children: { "picked:*": "n_evening_more", expired: "n_night" } });
 
 node("n_night", ["20:00", "23:59"], [card("q1", "quiet_night")], { children: { "picked:*": null, expired: null } });
 
 const titles = {
   n_morning: "Morning", n_morning_b: "Morning", n_quiet_am: "Morning",
-  n_midmorning: "Late morning", n_catchup: "Late morning",
+  n_midmorning: "Morning", n_catchup: "Late morning",
   n_getready: "Before 12:30", n_appointment: "Appointment",
   n_afternoon: "Afternoon", n_afternoon_wet: "Afternoon", n_quiet_pm: "Afternoon",
-  n_evening: "Evening", n_night: "Tonight"
+  n_evening: "Evening", n_night: "Tonight",
+  n_open_am: "Morning", n_afternoon_more: "Afternoon", n_evening_more: "Evening"
 };
 Object.keys(nodes).forEach(function (id) {
   if (!titles[id]) { throw new Error("no title for " + id); }

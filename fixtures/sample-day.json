@@ -21,6 +21,7 @@
           "id": "m1",
           "option": "coffee_window",
           "text": "Slow coffee by the window, ten minutes",
+          "label": "Coffee by the window",
           "duration_min": 10,
           "tags": {
             "horizon": "short",
@@ -37,6 +38,7 @@
           "id": "m2",
           "option": "stretch_shower",
           "text": "Stretch, then shower first",
+          "label": "Stretch and shower",
           "duration_min": 25,
           "tags": {
             "horizon": "short",
@@ -52,6 +54,7 @@
           "id": "m3",
           "option": "market_flowers",
           "text": "Walk to the market for flowers. Bring an umbrella.",
+          "label": "Walk to the market",
           "duration_min": 40,
           "tags": {
             "horizon": "medium",
@@ -68,6 +71,7 @@
           "id": "m4",
           "option": "perfume",
           "text": "Put on the good perfume.",
+          "label": "Perfume on",
           "duration_min": 2,
           "tags": {
             "horizon": "short",
@@ -99,6 +103,7 @@
           "id": "mb1",
           "option": "eat_first",
           "text": "Eggs and toast before anything else",
+          "label": "Eggs and toast",
           "duration_min": 15,
           "tags": {
             "horizon": "short",
@@ -114,6 +119,7 @@
           "id": "mb2",
           "option": "putoff_ten",
           "text": "Ten minutes on the thing you keep putting off",
+          "label": "Ten minutes on the thing you were putting off",
           "duration_min": 10,
           "tags": {
             "horizon": "medium",
@@ -129,6 +135,7 @@
           "id": "mb3",
           "option": "tidy_surface",
           "text": "Put a playlist on and clear one surface",
+          "label": "Clearing a surface",
           "duration_min": 10,
           "tags": {
             "horizon": "short",
@@ -159,6 +166,7 @@
           "id": "qa1",
           "option": "quiet_now",
           "text": "Nothing needed right now.",
+          "label": "Nothing needed right now.",
           "duration_min": 0,
           "tags": {
             "horizon": "short",
@@ -186,6 +194,7 @@
           "id": "mm1",
           "option": "write_25",
           "text": "Write for twenty-five minutes",
+          "label": "Writing",
           "duration_min": 25,
           "tags": {
             "horizon": "medium",
@@ -201,6 +210,7 @@
           "id": "mm2",
           "option": "two_emails",
           "text": "Answer the two emails that are waiting",
+          "label": "Two emails",
           "duration_min": 15,
           "tags": {
             "horizon": "short",
@@ -216,6 +226,7 @@
           "id": "mm3",
           "option": "walk_block",
           "text": "Walk around the block before the rain picks up",
+          "label": "Walk around the block",
           "duration_min": 15,
           "tags": {
             "horizon": "short",
@@ -230,10 +241,10 @@
       ],
       "reroll": false,
       "children": {
-        "picked:*": "n_getready",
+        "picked:*": "n_open_am",
         "expired": "n_getready"
       },
-      "title": "Late morning"
+      "title": "Morning"
     },
     "n_catchup": {
       "window": [
@@ -245,6 +256,7 @@
           "id": "c1",
           "option": "eat_before_out",
           "text": "Eat something before you head out",
+          "label": "Eating before heading out",
           "duration_min": 10,
           "tags": {
             "horizon": "short",
@@ -258,6 +270,7 @@
           "id": "c2",
           "option": "bag_keys",
           "text": "Get your bag and keys together",
+          "label": "Bag and keys",
           "duration_min": 5,
           "tags": {
             "horizon": "short",
@@ -272,7 +285,7 @@
       ],
       "reroll": false,
       "children": {
-        "picked:*": "n_getready",
+        "picked:*": "n_open_am",
         "expired": "n_getready"
       },
       "title": "Late morning"
@@ -287,6 +300,7 @@
           "id": "g1",
           "option": "getting_ready",
           "text": "Getting ready",
+          "label": "Getting ready",
           "duration_min": 20,
           "tags": {
             "horizon": "short",
@@ -308,6 +322,7 @@
           "id": "g2",
           "option": "leave_early",
           "text": "Leave ten minutes early and take the bus to the door",
+          "label": "Leaving early by bus",
           "duration_min": 10,
           "tags": {
             "horizon": "short",
@@ -341,6 +356,7 @@
           "id": "a1",
           "option": "directions",
           "text": "Directions to the appointment, 14 minutes",
+          "label": "Heading to the appointment",
           "duration_min": 14,
           "tags": {
             "horizon": "short",
@@ -353,7 +369,7 @@
       ],
       "reroll": false,
       "children": {
-        "picked:*": "n_afternoon",
+        "picked:*": "n_appointment",
         "expired": "n_afternoon"
       },
       "title": "Appointment"
@@ -368,6 +384,7 @@
           "id": "p1",
           "option": "write_25",
           "text": "Write for twenty-five minutes",
+          "label": "Writing",
           "duration_min": 25,
           "tags": {
             "horizon": "medium",
@@ -383,6 +400,7 @@
           "id": "p2",
           "option": "sketch_15",
           "text": "Sketch for fifteen minutes, any subject",
+          "label": "Sketching",
           "duration_min": 15,
           "tags": {
             "horizon": "medium",
@@ -398,6 +416,7 @@
           "id": "p3",
           "option": "park_walk",
           "text": "Walk to the nearest park. 12 minutes, good light right now.",
+          "label": "Walk to the park",
           "duration_min": 40,
           "tags": {
             "horizon": "medium",
@@ -414,6 +433,7 @@
           "id": "p4",
           "option": "coffee_light",
           "text": "Coffee somewhere with nice lighting. Wear something you like.",
+          "label": "Coffee out",
           "duration_min": 45,
           "tags": {
             "horizon": "short",
@@ -429,7 +449,7 @@
       ],
       "reroll": true,
       "children": {
-        "picked:*": "n_evening",
+        "picked:*": "n_afternoon_more",
         "expired": "n_evening",
         "reroll": "n_afternoon_wet"
       },
@@ -451,6 +471,7 @@
               "id": "pl1",
               "option": "lie_down_20",
               "text": "Lie down for twenty minutes, no screen",
+              "label": "Lying down, no screen",
               "duration_min": 20,
               "tags": {
                 "horizon": "short",
@@ -467,6 +488,7 @@
               "id": "pl2",
               "option": "tea_window",
               "text": "Tea by the window",
+              "label": "Tea by the window",
               "duration_min": 15,
               "tags": {
                 "horizon": "short",
@@ -482,6 +504,7 @@
               "id": "pl3",
               "option": "walk_ten",
               "text": "Ten-minute walk, no destination",
+              "label": "Short walk",
               "duration_min": 10,
               "tags": {
                 "horizon": "short",
@@ -506,6 +529,7 @@
           "id": "pw1",
           "option": "sketch_15",
           "text": "Sketch for fifteen minutes, any subject",
+          "label": "Sketching",
           "duration_min": 15,
           "tags": {
             "horizon": "medium",
@@ -521,6 +545,7 @@
           "id": "pw2",
           "option": "read_20",
           "text": "Read something for twenty minutes",
+          "label": "Reading",
           "duration_min": 20,
           "tags": {
             "horizon": "short",
@@ -536,6 +561,7 @@
           "id": "pw3",
           "option": "prep_dinner",
           "text": "Chop what you need for dinner now",
+          "label": "Chopping for dinner",
           "duration_min": 15,
           "tags": {
             "horizon": "short",
@@ -548,7 +574,7 @@
       ],
       "reroll": true,
       "children": {
-        "picked:*": "n_evening",
+        "picked:*": "n_afternoon_more",
         "expired": "n_evening",
         "reroll": "n_quiet_pm"
       },
@@ -564,6 +590,7 @@
           "id": "qp1",
           "option": "quiet_now",
           "text": "Nothing needed right now.",
+          "label": "Nothing needed right now.",
           "duration_min": 0,
           "tags": {
             "horizon": "short",
@@ -591,6 +618,7 @@
           "id": "e1",
           "option": "chicken_bowl",
           "text": "Leftover chicken bowl, fifteen minutes",
+          "label": "Chicken bowl",
           "duration_min": 15,
           "tags": {
             "horizon": "short",
@@ -604,6 +632,7 @@
           "id": "e2",
           "option": "soup_bread",
           "text": "Something warm and light: soup and bread",
+          "label": "Soup and bread",
           "duration_min": 20,
           "tags": {
             "horizon": "short",
@@ -617,6 +646,7 @@
           "id": "e3",
           "option": "new_recipe",
           "text": "Cook something you haven't made before",
+          "label": "Cooking something new",
           "duration_min": 45,
           "tags": {
             "horizon": "medium",
@@ -629,7 +659,175 @@
       ],
       "reroll": false,
       "children": {
-        "picked:*": "n_night",
+        "picked:*": "n_evening_more",
+        "expired": "n_night"
+      },
+      "title": "Evening"
+    },
+    "n_open_am": {
+      "window": [
+        "07:45",
+        "11:30"
+      ],
+      "cards": [
+        {
+          "id": "oa1",
+          "option": "tea_window",
+          "text": "Tea by the window",
+          "label": "Tea by the window",
+          "duration_min": 15,
+          "tags": {
+            "horizon": "short",
+            "goal": "g_rest",
+            "kind": "routine",
+            "novel": false
+          },
+          "signal": {
+            "overwhelm": -1
+          }
+        },
+        {
+          "id": "oa2",
+          "option": "read_20",
+          "text": "Read something for twenty minutes",
+          "label": "Reading",
+          "duration_min": 20,
+          "tags": {
+            "horizon": "short",
+            "goal": "g_rest",
+            "kind": "routine",
+            "novel": false
+          },
+          "signal": {
+            "overwhelm": -1
+          }
+        },
+        {
+          "id": "oa3",
+          "option": "sketch_15",
+          "text": "Sketch for fifteen minutes, any subject",
+          "label": "Sketching",
+          "duration_min": 15,
+          "tags": {
+            "horizon": "medium",
+            "goal": "g_creative",
+            "kind": "variation",
+            "novel": false
+          },
+          "signal": {
+            "mood": 1
+          }
+        }
+      ],
+      "reroll": false,
+      "children": {
+        "picked:*": "n_open_am",
+        "expired": "n_getready"
+      },
+      "title": "Morning"
+    },
+    "n_afternoon_more": {
+      "window": [
+        "13:30",
+        "17:00"
+      ],
+      "cards": [
+        {
+          "id": "am1",
+          "option": "tea_window",
+          "text": "Tea by the window",
+          "label": "Tea by the window",
+          "duration_min": 15,
+          "tags": {
+            "horizon": "short",
+            "goal": "g_rest",
+            "kind": "routine",
+            "novel": false
+          },
+          "signal": {
+            "overwhelm": -1
+          }
+        },
+        {
+          "id": "am2",
+          "option": "walk_ten",
+          "text": "Ten-minute walk, no destination",
+          "label": "Short walk",
+          "duration_min": 10,
+          "tags": {
+            "horizon": "short",
+            "goal": "g_body",
+            "kind": "wild",
+            "novel": true
+          },
+          "signal": {}
+        },
+        {
+          "id": "am3",
+          "option": "read_20",
+          "text": "Read something for twenty minutes",
+          "label": "Reading",
+          "duration_min": 20,
+          "tags": {
+            "horizon": "short",
+            "goal": "g_rest",
+            "kind": "routine",
+            "novel": false
+          },
+          "signal": {
+            "overwhelm": -1
+          }
+        }
+      ],
+      "reroll": false,
+      "children": {
+        "picked:*": "n_afternoon_more",
+        "expired": "n_evening"
+      },
+      "title": "Afternoon"
+    },
+    "n_evening_more": {
+      "window": [
+        "17:00",
+        "20:00"
+      ],
+      "cards": [
+        {
+          "id": "em1",
+          "option": "read_20",
+          "text": "Read something for twenty minutes",
+          "label": "Reading",
+          "duration_min": 20,
+          "tags": {
+            "horizon": "short",
+            "goal": "g_rest",
+            "kind": "routine",
+            "novel": false
+          },
+          "signal": {
+            "overwhelm": -1
+          }
+        },
+        {
+          "id": "em2",
+          "option": "lay_out",
+          "text": "Lay out tomorrow's clothes",
+          "label": "Laying out clothes",
+          "duration_min": 10,
+          "tags": {
+            "horizon": "short",
+            "goal": "g_admin",
+            "kind": "routine",
+            "novel": false
+          },
+          "signal": {
+            "overwhelm": -1
+          }
+        }
+      ],
+      "reroll": false,
+      "children": {
+        "picked:*": "n_evening_more",
         "expired": "n_night"
       },
       "title": "Evening"
@@ -644,6 +842,7 @@
           "id": "q1",
           "option": "quiet_night",
           "text": "Nothing needed tonight.",
+          "label": "Nothing needed tonight.",
           "duration_min": 0,
           "tags": {
             "horizon": "short",
@@ -678,7 +877,8 @@
       "status": "active",
       "paused_until": null,
       "why": "A slow start keeps the first decision of the day small.",
-      "text": "Slow coffee by the window, ten minutes"
+      "text": "Slow coffee by the window, ten minutes",
+      "label": "Coffee by the window"
     },
     "stretch_shower": {
       "id": "stretch_shower",
@@ -695,7 +895,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Stretch, then shower first"
+      "text": "Stretch, then shower first",
+      "label": "Stretch and shower"
     },
     "market_flowers": {
       "id": "market_flowers",
@@ -713,7 +914,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Walk to the market for flowers. Bring an umbrella."
+      "text": "Walk to the market for flowers. Bring an umbrella.",
+      "label": "Walk to the market"
     },
     "perfume": {
       "id": "perfume",
@@ -731,7 +933,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Put on the good perfume."
+      "text": "Put on the good perfume.",
+      "label": "Perfume on"
     },
     "eat_first": {
       "id": "eat_first",
@@ -748,7 +951,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Eggs and toast before anything else"
+      "text": "Eggs and toast before anything else",
+      "label": "Eggs and toast"
     },
     "putoff_ten": {
       "id": "putoff_ten",
@@ -765,7 +969,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Ten minutes on the thing you keep putting off"
+      "text": "Ten minutes on the thing you keep putting off",
+      "label": "Ten minutes on the thing you were putting off"
     },
     "tidy_surface": {
       "id": "tidy_surface",
@@ -782,7 +987,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Put a playlist on and clear one surface"
+      "text": "Put a playlist on and clear one surface",
+      "label": "Clearing a surface"
     },
     "write_25": {
       "id": "write_25",
@@ -799,7 +1005,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Write for twenty-five minutes"
+      "text": "Write for twenty-five minutes",
+      "label": "Writing"
     },
     "two_emails": {
       "id": "two_emails",
@@ -816,7 +1023,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Answer the two emails that are waiting"
+      "text": "Answer the two emails that are waiting",
+      "label": "Two emails"
     },
     "walk_block": {
       "id": "walk_block",
@@ -833,7 +1041,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Walk around the block before the rain picks up"
+      "text": "Walk around the block before the rain picks up",
+      "label": "Walk around the block"
     },
     "eat_before_out": {
       "id": "eat_before_out",
@@ -848,7 +1057,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Eat something before you head out"
+      "text": "Eat something before you head out",
+      "label": "Eating before heading out"
     },
     "bag_keys": {
       "id": "bag_keys",
@@ -865,7 +1075,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Get your bag and keys together"
+      "text": "Get your bag and keys together",
+      "label": "Bag and keys"
     },
     "getting_ready": {
       "id": "getting_ready",
@@ -884,7 +1095,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Getting ready"
+      "text": "Getting ready",
+      "label": "Getting ready"
     },
     "leave_early": {
       "id": "leave_early",
@@ -903,7 +1115,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Leave ten minutes early and take the bus to the door"
+      "text": "Leave ten minutes early and take the bus to the door",
+      "label": "Leaving early by bus"
     },
     "directions": {
       "id": "directions",
@@ -920,7 +1133,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Directions to the appointment, 14 minutes"
+      "text": "Directions to the appointment, 14 minutes",
+      "label": "Heading to the appointment"
     },
     "sketch_15": {
       "id": "sketch_15",
@@ -937,7 +1151,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Sketch for fifteen minutes, any subject"
+      "text": "Sketch for fifteen minutes, any subject",
+      "label": "Sketching"
     },
     "park_walk": {
       "id": "park_walk",
@@ -960,7 +1175,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Walk to the nearest park. 12 minutes, good light right now."
+      "text": "Walk to the nearest park. 12 minutes, good light right now.",
+      "label": "Walk to the park"
     },
     "coffee_light": {
       "id": "coffee_light",
@@ -978,7 +1194,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Coffee somewhere with nice lighting. Wear something you like."
+      "text": "Coffee somewhere with nice lighting. Wear something you like.",
+      "label": "Coffee out"
     },
     "lie_down_20": {
       "id": "lie_down_20",
@@ -996,7 +1213,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Lie down for twenty minutes, no screen"
+      "text": "Lie down for twenty minutes, no screen",
+      "label": "Lying down, no screen"
     },
     "tea_window": {
       "id": "tea_window",
@@ -1013,7 +1231,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Tea by the window"
+      "text": "Tea by the window",
+      "label": "Tea by the window"
     },
     "walk_ten": {
       "id": "walk_ten",
@@ -1030,7 +1249,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Ten-minute walk, no destination"
+      "text": "Ten-minute walk, no destination",
+      "label": "Short walk"
     },
     "read_20": {
       "id": "read_20",
@@ -1047,7 +1267,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Read something for twenty minutes"
+      "text": "Read something for twenty minutes",
+      "label": "Reading"
     },
     "prep_dinner": {
       "id": "prep_dinner",
@@ -1062,7 +1283,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Chop what you need for dinner now"
+      "text": "Chop what you need for dinner now",
+      "label": "Chopping for dinner"
     },
     "chicken_bowl": {
       "id": "chicken_bowl",
@@ -1077,7 +1299,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Leftover chicken bowl, fifteen minutes"
+      "text": "Leftover chicken bowl, fifteen minutes",
+      "label": "Chicken bowl"
     },
     "soup_bread": {
       "id": "soup_bread",
@@ -1092,7 +1315,8 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Something warm and light: soup and bread"
+      "text": "Something warm and light: soup and bread",
+      "label": "Soup and bread"
     },
     "new_recipe": {
       "id": "new_recipe",
@@ -1107,7 +1331,26 @@
       "status": "active",
       "paused_until": null,
       "why": null,
-      "text": "Cook something you haven't made before"
+      "text": "Cook something you haven't made before",
+      "label": "Cooking something new"
+    },
+    "lay_out": {
+      "id": "lay_out",
+      "kind": "routine",
+      "goal": "g_admin",
+      "horizon": "short",
+      "duration_min": 10,
+      "requires": {},
+      "signal": {
+        "overwhelm": -1
+      },
+      "cooldown_days": 1,
+      "daily_cap_group": null,
+      "status": "active",
+      "paused_until": null,
+      "why": null,
+      "text": "Lay out tomorrow's clothes",
+      "label": "Laying out clothes"
     },
     "quiet_now": {
       "id": "quiet_now",
