@@ -63,7 +63,9 @@ The planner searches the day and writes one node per situation.
 - **Retiring options:** an option is skipped once everything it gives is already true, and `skipIf` retires it for other reasons. A market walk retires coffee, eggs and toast, and a lap round the block, because a croissant and coffee on the way back takes their place.
 - **Facts** are what the user has done. `did_<option>` stops an option repeating within a block. `dressed` and `fed` carry into later blocks; the rest are dropped when a block ends.
 - **Conditions** are applied here, not in the app: an option that needs dry weather or daylight appears only if the block is mostly dry or light, and low energy removes demanding options and puts gentle ones first.
-- **Paging:** a node shows the next four candidates by rank. If there are more, `reroll` leads to a node with the following four.
+- **How many cards:** one to four, decided by the planner. A block has a base count (a free afternoon four, the morning and evening three, the time before an appointment three, the appointment itself one). Low energy takes one off, so does having already done three things in the block, and a deterministic bit of variety nudges it either way. Never fewer than two unless there is only one real option or it is the appointment or the night.
+- **Paging:** a node shows the top candidates by rank. If more remain, `reroll` leads to a node with the next set.
+- **Flirty options** are found, not served. Each has a `chance`, applied deterministically per day, so it turns up on some days and not others. At most one flirty card is on a screen.
 - **Depth:** a block goes quiet after twelve picks, which a normal day does not reach.
 
 The planner works lazily. A node is created with its cards, and its children are created the first time the app arrives there, so the app always has the next screen for every card it could pick and the work stays small. A new plan (energy changed, weather arrived) restores the node the user was on, so progress through the morning is kept. For tests, `plan()` builds the whole tree with a lower cap, about 1,500 nodes for the sample day.

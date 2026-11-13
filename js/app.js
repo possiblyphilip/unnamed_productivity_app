@@ -23,7 +23,7 @@
   var LENS_IDS = { sleep: true, moon: true, cycle: true };
   var DAY_MODES = [["sick", "Sick"], ["travel", "Travelling"], ["big", "Big day"], ["rough", "Rough day"]];
   var DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  var STOPS = [["8:10a", 490], ["11:40a", 700], ["2:10p", 850], ["8:30p", 1230]];
+  var STOPS = [["8:10a", 490], ["11:40a", 700], ["2:10p", 850], ["6:10p", 1090], ["8:30p", 1230]];
   function quietCard(x) { return { id: "q_auto", option: "quiet", text: (x.view.node && x.view.node.quiet) || "Nothing needed right now.", tags: { kind: "quiet" }, signal: {} }; }
 
   var bundle = null;
@@ -48,9 +48,11 @@
   function ctxNow() {
     if (!test.live) {
       var c = Sample.context;
-      return { weather: c.weather, sunrise: c.sunrise, sunset: c.sunset, calendar: c.calendar, moon: { name: cap(c.moon.phase), group: Learner.moonGroup(c.moon.phase) } };
+      return { day: c.day, weather: c.weather, sunrise: c.sunrise, sunset: c.sunset, calendar: c.calendar, moon: { name: cap(c.moon.phase), group: Learner.moonGroup(c.moon.phase) } };
     }
-    return { weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar, moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation) } };
+    var d = new Date();
+    var day = d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate();
+    return { day: day, weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar, moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation) } };
   }
 
   function lensStates(c) {
@@ -72,7 +74,7 @@
     var c = ctxNow();
     if (S.day !== todayKey()) { S = { day: todayKey() }; }
     if (S.cursor && S.cursor.setAt > m) { S = { day: S.day, dayMode: S.dayMode }; }
-    var sig = [test.live ? 1 : 0, test.energy, live.weather.length, live.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
+    var sig = [c.day, test.live ? 1 : 0, test.energy, live.weather.length, live.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
     if (sig !== planSig) { sess = Planner.session(c, { energy: test.energy }); bundle = sess.bundle; planSig = sig; }
     var cursor = S.cursor || { node: bundle.root, setAt: 0 };
     if (cursor.node && !bundle.nodes[cursor.node]) { sess.restore(cursor.node); }
