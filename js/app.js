@@ -1,0 +1,407 @@
+(function () {
+  "use strict";
+
+  var app = document.getElementById("app");
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; });
+  }
+  function load(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+  function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
+
+  var GOALS = {
+    g_calm: "Calm", g_body: "Body", g_joy: "Joy", g_nutrition: "Eating", g_writing: "Writing",
+    g_creative: "Creative", g_followthrough: "Follow-through", g_admin: "Admin", g_rest: "Rest"
+  };
+  var LENS_NAMES = { sleep: "Sleep", moon: "Moon", cycle: "Cycle" };
+  var DAY_MODES = [["sick", "Sick"], ["travel", "Travelling"], ["big", "Big day"], ["rough", "Rough day"]];
+  var DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var STOPS = [["8:10a", 490], ["11:40a", 700], ["2:10p", 850], ["8:30p", 1230]];
+  var QUIET = { id: "q_auto", option: "quiet_now", text: "Nothing needed right now.", tags: { kind: "quiet" }, signal: {} };
+
+  var bundle = null;
+  var S = load("cc.state", {});
+  var offers = load("cc.offers", []);
+  var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false } }, load("cc.lenses", {}));
+  var goals = load("cc.goals", {});
+  var notes = load("cc.notes", []);
+  var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 5.67, cycleDay: 21 }, load("cc.test", {}));
+  var ui = { sheet: null, settings: false, drawer: false, draft: "", noteSent: false, calMsg: "" };
+  var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], place: null, moon: Ctx.moonFor(new Date()) };
+
+  // ---- time and context ----
+  function todayKey() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+  function realMinutes() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  function nowMin() { return test.minutes !== null ? test.minutes : realMinutes(); }
+  function dowNow() { return test.dow !== null ? test.dow : new Date().getDay(); }
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function hm(h) { var t = Math.round(h * 60); return Math.floor(t / 60) + "h " + (t % 60) + "m"; }
+
+  function ctxNow() {
+    if (!test.live) {
+      var c = bundle.context;
+      return { weather: c.weather, sunrise: c.sunrise, sunset: c.sunset, calendar: c.calendar, moon: { name: cap(c.moon.phase), group: Learner.moonGroup(c.moon.phase) } };
+    }
+    return { weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar, moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation) } };
+  }
+
+  function lensStates(c) {
+    var s = {};
+    if (lenses.sleep.enabled) { s.sleep = Learner.sleepState(test.sleep); }
+    if (lenses.moon.enabled) { s.moon = c.moon.group; }
+    if (lenses.cycle.enabled && test.cycleDay > 0) { s.cycle = Learner.cyclePhase(test.cycleDay); }
+    return s;
+  }
+
+  function lensText(id, c) {
+    if (id === "sleep") { return "Slept " + hm(test.sleep); }
+    if (id === "moon") { return c.moon.name; }
+    return "Cycle day " + test.cycleDay;
+  }
+
+  function compute() {
+    var m = nowMin();
+    var c = ctxNow();
+    if (S.day !== todayKey()) { S = { day: todayKey() }; }
+    if (S.cursor && S.cursor.setAt > m) { S = { day: S.day, dayMode: S.dayMode }; }
+    var cursor = S.cursor || { node: bundle.root, enterAt: 0, setAt: 0 };
+    var view = Model.advance(bundle, cursor, m, c, { energy: test.energy });
+    return { m: m, c: c, cursor: cursor, view: view, states: lensStates(c), slice: Learner.sliceOf(dowNow(), m) };
+  }
+
+  function isActive(card) { return !!(card.signal && card.signal.energy > 0); }
+
+  function cardsFor(x) {
+    var cards = x.view.cards.filter(function (c) {
+      var g = c.tags && c.tags.goal;
+      return !(g && (goals[g] === "resting" || goals[g] === "retired"));
+    });
+    if (!cards.length) { return [QUIET]; }
+    var p = Learner.tilt(offers, x.slice, x.states);
+    if (p === null) { return cards; }
+    var activeFirst = p >= 0.5;
+    return cards.map(function (c, i) { return { c: c, i: i }; }).sort(function (a, b) {
+      var aa = isActive(a.c) ? 1 : 0, bb = isActive(b.c) ? 1 : 0;
+      if (aa !== bb) { return activeFirst ? bb - aa : aa - bb; }
+      return a.i - b.i;
+    }).map(function (o) { return o.c; });
+  }
+
+  function operational(x) {
+    var out = [], m = x.m, c = x.c, next = x.view.live.next;
+    if (next) {
+      var n = Model.mins(next.start) - m;
+      out.push(n <= 90 ? next.title + " in " + n + " min" : next.title + " at " + Model.clock(Model.mins(next.start)));
+    }
+    var segs = c.weather || [], cur = null, i;
+    for (i = 0; i < segs.length; i++) { if (m >= Model.mins(segs[i].from) && m < Model.mins(segs[i].to)) { cur = segs[i]; } }
+    if (cur && cur.sky === "rain") {
+      var dry = segs.filter(function (s) { return s.sky === "dry" && Model.mins(s.from) >= m; })[0];
+      out.push(dry ? "Rain until about " + Model.clock(Model.mins(dry.from)) : "Rain for the rest of the day");
+    } else if (cur) {
+      var rain = segs.filter(function (s) { return s.sky === "rain" && Model.mins(s.from) > m && Model.mins(s.from) - m <= 240; })[0];
+      if (rain) { out.push("Dry until " + Model.clock(Model.mins(rain.from))); }
+    }
+    var toSunset = Model.mins(c.sunset) - m;
+    if (toSunset > 0 && toSunset <= 180) { out.push("Sunset " + Model.clock(Model.mins(c.sunset))); }
+    return out;
+  }
+
+  function lensChips(x) {
+    var hidden = {};
+    Object.keys(lenses).forEach(function (id) { if (lenses[id].hidden) { hidden[id] = true; } });
+    return Learner.chipsFor(offers, x.slice, x.states, hidden, 3).map(function (f) {
+      return f.kind === "single" ? lensText(f.lens, x.c) : f.lens.map(function (id) { return lensText(id, x.c); }).join(" · ");
+    });
+  }
+
+  // ---- rendering ----
+  function topHtml(x) {
+    var v = x.view, title, sub;
+    if (S.dayMode) {
+      title = "Quiet day";
+      sub = "Day mode: " + S.dayMode.label.toLowerCase() + ". Ends at midnight.";
+    } else {
+      title = v.node ? v.node.title : "Today";
+      if (S.lastPick) { sub = "Last: " + S.lastPick.text + (v.skipped.length ? " Nothing picked since." : ""); }
+      else if (v.skipped.length) { sub = "Nothing picked yet today."; }
+      else { sub = v.id === bundle.root ? "Start of day." : "Nothing picked yet today."; }
+    }
+    return '<header class="top"><div class="row"><h1>' + esc(title) + '</h1><div class="links">' +
+      '<button class="quiet" data-act="menu">Not this</button><button class="quiet" data-act="settings">Settings</button></div></div>' +
+      '<p class="sub">' + esc(sub) + "</p></header>";
+  }
+
+  function midHtml(x, cards) {
+    var v = x.view;
+    if (S.dayMode) { return '<div class="card still">Nothing needed today.</div><div><button class="pill" data-act="enddaymode">End day mode</button></div>'; }
+    if (!v.node) { return '<div class="card still">Nothing needed.</div>'; }
+    if (v.waiting) {
+      var p = S.cursor && S.cursor.picked;
+      if (v.waiting.inProgress && p) {
+        var steps = "";
+        if (p.steps && p.steps.length) {
+          steps = '<ul class="steps">' + p.steps.map(function (s, i) {
+            return '<li><label><input type="checkbox" data-check="' + i + '"' + ((S.checks || {})[i] ? " checked" : "") + "> " + esc(s) + "</label></li>";
+          }).join("") + "</ul>";
+        }
+        return '<div class="doing"><p>' + esc(p.text) + '</p><p class="muted">Options return at ' + Model.clock(v.waiting.until) + ".</p>" + steps + '<button class="pill" data-act="done">Done</button></div>';
+      }
+      return '<p class="empty">' + (p ? "Next" : "First") + " options at " + Model.clock(v.waiting.until) + ".</p>";
+    }
+    return cards.map(function (c) {
+      if (c.tags && c.tags.kind === "quiet") { return '<div class="card still">' + esc(c.text) + "</div>"; }
+      return '<button class="card" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
+    }).join("");
+  }
+
+  function bottomHtml(x) {
+    var chips = operational(x).slice(0, 3).concat(lensChips(x));
+    return '<footer class="bottom">' + chips.map(function (t) { return '<span class="chip">' + esc(t) + "</span>"; }).join("") + "</footer>";
+  }
+
+  function rerollState(x) {
+    var n = x.view.node;
+    if (!n || !n.reroll || x.view.waiting || S.dayMode) { return "Not available on this screen"; }
+    if ((S.rerolls || {})[x.view.id] >= 1) { return "Already used on this screen"; }
+    if ((S.rerollsToday || 0) >= 3) { return "That's three today. Tell it what you're after instead."; }
+    return "";
+  }
+
+  function sheetHtml(x) {
+    if (!ui.sheet) { return ""; }
+    var body;
+    if (ui.sheet === "menu") {
+      var why = rerollState(x);
+      body = "<h2>Not this</h2>" +
+        '<button class="row-btn" data-act="reroll"' + (why ? " disabled" : "") + ">Show different options<small>" + esc(why || "One per screen") + "</small></button>" +
+        '<button class="row-btn" data-act="notesheet">Tell it something<small>Typed, one way, up to 1,000 characters</small></button>' +
+        '<button class="row-btn" data-act="daysheet">Today is off-plan<small>Sick, travelling, a big day, a rough one</small></button>';
+    } else if (ui.sheet === "note") {
+      body = "<h2>Tell it something</h2>" +
+        (ui.noteSent
+          ? '<p style="margin:0">Got it.</p><p class="note-line" style="color:var(--hatch)">Test build: saved on this device only. No planner is connected yet.</p>'
+          : '<textarea id="note" maxlength="1000" placeholder="What is off, or what you are about to do instead.">' + esc(ui.draft) + '</textarea>' +
+            '<div class="actions"><button class="pill" data-act="sendnote">Send</button><span class="count" id="count">' + ui.draft.length + " / 1000</span></div>");
+    } else {
+      body = "<h2>Today is off-plan</h2>" + DAY_MODES.map(function (d) {
+        return '<button class="row-btn" data-act="daymode" data-mode="' + d[0] + '">' + d[1] + "</button>";
+      }).join("");
+    }
+    return '<div class="scrim" data-act="closesheet"></div><div class="sheet">' + body + '<button class="quiet" data-act="closesheet">Close</button></div>';
+  }
+
+  function slicePhrase(s) { return s.replace("-", " ") + "s"; }
+
+  function settingsHtml() {
+    if (!ui.settings) { return ""; }
+    var lensRows = Object.keys(LENS_NAMES).map(function (id) {
+      var st = Learner.status(offers, id);
+      var status = !lenses[id].enabled ? "Off." : st.slices.length ? "Seems to matter on " + st.slices.map(slicePhrase).join(" and ") + "." : st.n < 20 ? "Not enough picks yet (" + st.n + ")." : "No clear pattern yet.";
+      return '<div class="item"><div class="name"><strong>' + LENS_NAMES[id] + '</strong></div><div class="status">' + esc(status) + "</div>" +
+        '<label><input type="checkbox" data-lens="' + id + '" data-field="enabled"' + (lenses[id].enabled ? " checked" : "") + "> On</label>" +
+        '<label><input type="checkbox" data-lens="' + id + '" data-field="hidden"' + (lenses[id].hidden ? " checked" : "") + "> Never show on screen</label></div>";
+    }).join("");
+    var goalRows = Object.keys(GOALS).map(function (id) {
+      var cur = goals[id] || "active";
+      var seg = [["active", "Keep"], ["resting", "Rest"], ["retired", "Retire"]].map(function (o) {
+        return '<button class="' + (cur === o[0] ? "on" : "") + '" data-act="goal" data-goal="' + id + '" data-val="' + o[0] + '">' + o[1] + "</button>";
+      }).join("");
+      return '<div class="item"><div class="name"><span>' + GOALS[id] + '</span><span class="seg">' + seg + "</span></div></div>";
+    }).join("");
+    var cal = Ctx.calendar.connected()
+      ? '<div class="status">Connected. Today\'s events are used when the test context is set to live.</div><button class="pill" data-act="caldisconnect">Disconnect</button>'
+      : '<div class="status">Not connected.</div><button class="pill" data-act="calconnect">Connect Google Calendar</button>';
+    var recent = notes.slice(-3).reverse().map(function (n) { return "<li>" + esc(n.text.slice(0, 70)) + "</li>"; }).join("");
+    return '<section class="settings"><header><h1>Settings</h1><button class="quiet" data-act="closesettings">Close</button></header><div class="body">' +
+      "<h2>What the app has noticed</h2>" + lensRows +
+      "<h2>Branches</h2><div class=\"status\" style=\"color:var(--muted);font-size:13.5px\">Rest hides a branch for now. Retire removes it. Nothing is deleted.</div>" + goalRows +
+      "<h2>Connections</h2><div class=\"item\"><div class=\"name\"><strong>Weather and location</strong></div><div class=\"status\">" + esc(live.place ? "Using " + live.place.label + "." : "Not loaded yet.") + '</div><button class="pill" data-act="locate">Use my location</button></div>' +
+      '<div class="item"><div class="name"><strong>Google Calendar</strong></div>' + cal + (ui.calMsg ? '<p class="note-line">' + esc(ui.calMsg) + "</p>" : "") + "</div>" +
+      (recent ? "<h2>Recent notes</h2><ul>" + recent + "</ul>" : "") +
+      '<h2>This device</h2><button class="pill" data-act="clearall">Clear everything stored here</button><p class="note-line">Picks, settings and notes stay in this browser.</p>' +
+      "</div></section>";
+  }
+
+  function testHtml() {
+    if (!test.on) { return ""; }
+    var stops = STOPS.map(function (s) { return '<button class="' + (test.minutes === s[1] ? "on" : "") + '" data-act="time" data-m="' + s[1] + '">' + s[0] + "</button>"; }).join("");
+    stops += '<button class="' + (test.minutes === null ? "on" : "") + '" data-act="time" data-m="now">Now</button>';
+    var bar = '<div class="testbar"><div class="tag">TEST ONLY</div><div class="stops">' + stops + '</div><button class="' + (ui.drawer ? "on" : "") + '" data-act="drawer">More</button></div>';
+    var drawer = "";
+    if (ui.drawer) {
+      var real = DOWS[new Date().getDay()];
+      var dowOpts = '<option value="">Today (' + real + ")</option>" + DOWS.map(function (d, i) { return '<option value="' + i + '"' + (test.dow === i ? " selected" : "") + ">" + d + "</option>"; }).join("");
+      var sample = offers.filter(function (o) { return o.source === "sample"; }).length;
+      drawer = '<div class="drawer"><h3>TEST TOOLS</h3>' +
+        '<div class="ctl"><span>Day of week</span><select data-test="dow">' + dowOpts + "</select></div>" +
+        '<div class="ctl"><span>Context</span><select data-test="live"><option value="0"' + (!test.live ? " selected" : "") + '>Sample day (Seattle, invented)</option><option value="1"' + (test.live ? " selected" : "") + ">Live weather and calendar</option></select></div>" +
+        '<div class="ctl"><span>Energy</span><select data-test="energy"><option value="normal"' + (test.energy === "normal" ? " selected" : "") + '>Normal</option><option value="low"' + (test.energy === "low" ? " selected" : "") + ">Low</option></select></div>" +
+        '<div class="ctl"><span>Sleep last night: <b id="sleepv">' + hm(test.sleep) + '</b></span><input type="range" min="4" max="9" step="0.1" value="' + test.sleep + '" data-test="sleep" data-out="sleepv"></div>' +
+        '<div class="ctl"><span>Cycle day: <b id="cyclev">' + (test.cycleDay || "off") + '</b></span><input type="range" min="0" max="28" step="1" value="' + test.cycleDay + '" data-test="cycleDay" data-out="cyclev"></div>' +
+        '<div class="btns"><button data-act="resetday">Replay the day from the start</button><button data-act="loadsample">Load 20 weeks of made-up picks</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
+        "<p>" + offers.length + " picks stored (" + sample + " made up). Add #test to the address to bring these back.</p></div>";
+    }
+    return bar + drawer;
+  }
+
+  function render() {
+    if (!bundle) { app.innerHTML = '<p class="empty" style="margin-top:40vh">Loading</p>'; return; }
+    var x = compute();
+    var cards = cardsFor(x);
+    app.innerHTML = topHtml(x) + '<section class="mid">' + midHtml(x, cards) + "</section>" + bottomHtml(x) + sheetHtml(x) + settingsHtml() + testHtml();
+    x.shown = cards;
+    current = x;
+  }
+  var current = null;
+
+  // ---- actions ----
+  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.goals", goals); save("cc.notes", notes); save("cc.test", test); }
+
+  function pick(id) {
+    var x = compute();
+    var cards = cardsFor(x);
+    var card = cards.filter(function (c) { return c.id === id; })[0];
+    if (!card || !x.view.node) { return; }
+    offers.push({
+      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states),
+      shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
+      picked: card.option, pickedActive: isActive(card), source: test.minutes !== null ? "test" : "live"
+    });
+    if (offers.length > 3000) { offers = offers.slice(offers.length - 3000); }
+    var child = Model.childFor(x.view.node, card);
+    S.lastPick = { text: card.text, at: x.m };
+    S.checks = {};
+    S.cursor = { node: child, enterAt: x.m + (card.duration_min || 0), setAt: x.m, picked: { id: card.id, text: card.text, steps: card.steps || null } };
+    saveAll();
+    render();
+  }
+
+  function reroll() {
+    var x = compute();
+    if (rerollState(x)) { return; }
+    S.rerolls = S.rerolls || {};
+    S.rerolls[x.view.id] = (S.rerolls[x.view.id] || 0) + 1;
+    S.rerollsToday = (S.rerollsToday || 0) + 1;
+    S.cursor = { node: x.view.node.children.reroll, enterAt: 0, setAt: x.m, picked: null };
+    ui.sheet = null;
+    saveAll();
+    render();
+  }
+
+  function loadLive() {
+    live.moon = Ctx.moonFor(new Date());
+    Ctx.locate().then(function (place) {
+      live.place = place;
+      return Ctx.loadWeather(place);
+    }).then(function (w) {
+      live.weather = w.weather; live.sunrise = w.sunrise; live.sunset = w.sunset;
+      render();
+    }).catch(function () { ui.calMsg = "Weather didn't answer."; render(); });
+    Ctx.calendar.load().then(function (ev) { live.calendar = ev || []; render(); }).catch(function () { /* stays empty */ });
+  }
+
+  app.addEventListener("click", function (e) {
+    var el = e.target.closest("[data-act]");
+    if (!el || el.disabled) { return; }
+    var act = el.getAttribute("data-act");
+    if (act === "pick") { pick(el.getAttribute("data-id")); return; }
+    if (act === "reroll") { reroll(); return; }
+    if (act === "menu") { ui.sheet = "menu"; }
+    else if (act === "closesheet") { ui.sheet = null; ui.noteSent = false; }
+    else if (act === "notesheet") { ui.sheet = "note"; ui.noteSent = false; }
+    else if (act === "daysheet") { ui.sheet = "day"; }
+    else if (act === "daymode") {
+      var mode = el.getAttribute("data-mode");
+      S.dayMode = { mode: mode, label: DAY_MODES.filter(function (d) { return d[0] === mode; })[0][1] };
+      ui.sheet = null;
+    }
+    else if (act === "enddaymode") { delete S.dayMode; }
+    else if (act === "sendnote") {
+      var text = ui.draft.trim();
+      if (!text) { return; }
+      notes.push({ t: Date.now(), text: text });
+      ui.draft = ""; ui.noteSent = true;
+    }
+    else if (act === "done") { if (S.cursor) { S.cursor.enterAt = nowMin(); } }
+    else if (act === "settings") { ui.settings = true; }
+    else if (act === "closesettings") { ui.settings = false; }
+    else if (act === "goal") { goals[el.getAttribute("data-goal")] = el.getAttribute("data-val"); }
+    else if (act === "time") {
+      var m = el.getAttribute("data-m");
+      test.minutes = m === "now" ? null : Number(m);
+    }
+    else if (act === "drawer") { ui.drawer = !ui.drawer; }
+    else if (act === "resetday") { S = { day: todayKey(), dayMode: S.dayMode }; }
+    else if (act === "loadsample") { offers = Sim.demoHistory(); }
+    else if (act === "clearhistory") { offers = []; }
+    else if (act === "hidetest") { test.on = false; ui.drawer = false; }
+    else if (act === "locate") { loadLive(); ui.calMsg = "Asking for your location."; }
+    else if (act === "calconnect") {
+      Ctx.calendar.connect(function (msg) {
+        ui.calMsg = msg;
+        if (!msg) { test.live = true; saveAll(); loadLive(); }
+        render();
+      });
+      return;
+    }
+    else if (act === "caldisconnect") { Ctx.calendar.disconnect(); live.calendar = []; ui.calMsg = ""; }
+    else if (act === "clearall") {
+      if (!confirm("Clear picks, settings and notes stored in this browser?")) { return; }
+      Object.keys(localStorage).filter(function (k) { return k.indexOf("cc.") === 0; }).forEach(function (k) { localStorage.removeItem(k); });
+      location.reload();
+      return;
+    }
+    saveAll();
+    render();
+  });
+
+  app.addEventListener("input", function (e) {
+    var t = e.target;
+    if (t.id === "note") {
+      ui.draft = t.value;
+      var c = document.getElementById("count");
+      if (c) { c.textContent = ui.draft.length + " / 1000"; }
+    } else if (t.getAttribute("data-out")) {
+      var out = document.getElementById(t.getAttribute("data-out"));
+      var v = Number(t.value);
+      if (out) { out.textContent = t.getAttribute("data-test") === "sleep" ? hm(v) : (v || "off"); }
+    }
+  });
+
+  app.addEventListener("change", function (e) {
+    var t = e.target;
+    var key = t.getAttribute("data-test");
+    if (key) {
+      var val = t.value;
+      if (key === "dow") { test.dow = val === "" ? null : Number(val); }
+      else if (key === "live") { test.live = val === "1"; if (test.live) { loadLive(); } }
+      else if (key === "energy") { test.energy = val; }
+      else { test[key] = Number(val); }
+    } else if (t.getAttribute("data-lens")) {
+      lenses[t.getAttribute("data-lens")][t.getAttribute("data-field")] = t.checked;
+    } else if (t.getAttribute("data-check") !== null) {
+      S.checks = S.checks || {};
+      S.checks[t.getAttribute("data-check")] = t.checked;
+    } else { return; }
+    saveAll();
+    render();
+  });
+
+  // ---- start ----
+  var tokenMsg = Ctx.calendar.takeRedirectToken();
+  if (tokenMsg === "") { test.live = true; } else if (tokenMsg) { ui.calMsg = tokenMsg; }
+  if (location.hash === "#clean") { test.on = false; }
+  if (location.hash === "#test") { test.on = true; }
+
+  fetch("fixtures/sample-day.json").then(function (r) { return r.json(); }).then(function (b) {
+    bundle = b;
+    if (test.live) { loadLive(); }
+    render();
+    setInterval(function () {
+      if (test.minutes === null && !ui.sheet && !ui.settings && !ui.drawer) { render(); }
+    }, 30000);
+  }).catch(function () {
+    app.innerHTML = '<p class="empty" style="margin:40vh 20px 0">Could not load the sample day. Serve this folder over http and reload.</p>';
+  });
+})();
