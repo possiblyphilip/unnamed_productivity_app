@@ -252,7 +252,7 @@
         '<div class="ctl"><span>Energy</span><select data-test="energy"><option value="normal"' + (test.energy === "normal" ? " selected" : "") + '>Normal</option><option value="low"' + (test.energy === "low" ? " selected" : "") + ">Low</option></select></div>" +
         '<div class="ctl"><span>Sleep last night: <b id="sleepv">' + hm(test.sleep) + '</b></span><input type="range" min="4" max="9" step="0.1" value="' + test.sleep + '" data-test="sleep" data-out="sleepv"></div>' +
         '<div class="ctl"><span>Cycle day: <b id="cyclev">' + (test.cycleDay || "off") + '</b></span><input type="range" min="0" max="28" step="1" value="' + test.cycleDay + '" data-test="cycleDay" data-out="cyclev"></div>' +
-        '<div class="btns"><button data-act="resetday">Replay the day from the start</button><button data-act="loadsample">Load 20 weeks of made-up picks</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
+        '<div class="btns"><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="loadsample">Load 20 weeks of made-up picks</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
         "<p>Add #test to the address to bring these back.</p></div>";
     }
     return bar + drawer;
@@ -275,6 +275,18 @@
 
   // ---- actions ----
   function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.notes", notes); save("cc.test", test); }
+
+  // A clean run for testing: back to the first stop of the morning, nothing picked, no day mode, no sheet open.
+  // Picks made today during testing are dropped so they do not feed the learner; made-up history and
+  // picks from earlier days stay.
+  function replayDay() {
+    var start = new Date();
+    start.setHours(0, 0, 0, 0);
+    offers = offers.filter(function (o) { return o.source === "sample" || o.t < start.getTime(); });
+    S = { day: todayKey() };
+    test.minutes = 490;
+    ui.sheet = null; ui.noteSent = false; ui.draft = "";
+  }
 
   function pick(id) {
     var x = compute();
@@ -349,7 +361,7 @@
       test.minutes = m === "now" ? null : Number(m);
     }
     else if (act === "drawer") { ui.drawer = !ui.drawer; }
-    else if (act === "resetday") { S = { day: todayKey(), dayMode: S.dayMode }; }
+    else if (act === "resetday") { replayDay(); }
     else if (act === "loadsample") { offers = Sim.demoHistory(); }
     else if (act === "clearhistory") { offers = []; }
     else if (act === "hidetest") { test.on = false; ui.drawer = false; }
