@@ -80,6 +80,8 @@ Working draft. The server plans a day as a small tree of offers (a bundle). The 
 
 ## Screen
 
+A hamburger at the top left opens a menu: Today and Integrations. Integrations lists every app, feed and device that could be connected (calendars, messages, social, wearables and hardware, nutrition and training, cycle apps, sky and place, notes and files, focus tools). A few are live in this prototype: Google Calendar, weather and location, moon, and the sleep and cycle values. The rest are marked planned. Switching a lens on or off, and hiding its chips, happens there. The look follows the first demo: sage background, blush panel, paper cards.
+
 Three bands. Top: the node `title` plus a line about the last choice, built from the cursor history (it also reads "nothing picked since..." for inaction). Middle: 1 to 4 cards, centered. Bottom: context chips (operational facts, plus lens context only where it predicts the pick for this time slice; see Lenses). The test scrubber is an overlay in test builds only and never changes the layout.
 
 "Not this" is one quiet control in the top band. It opens a sheet with three tiers: show different options (one reroll per node, a daily cap, and a third reroll in a day goes to the note sheet), tell it something (a one-way note, typed first, voice later, capped at two minutes), and today is off-plan (sick, travelling, big day, rough day). Day modes end at midnight unless the user ends them sooner.
@@ -134,7 +136,7 @@ No setting gives both fast detection and a low false-finding rate. Narrow slices
 - **Planner:** option score is goal fit + state fit + novelty + cooldown + the sum of learned lift for this slice, per lens and per qualifying pair. A lens with no evidence contributes about nothing. `fits` on an option (a map of lens to the states it suits, for example `{ "moon": { "new": 1 } }`) is an authored hint used only until learned lift exists.
 - **Bottom band:** operational context always appears when it applies (an appointment in 50 minutes, rain). Lens context appears only when its evidence for the current slice passes the threshold, up to three chips, strongest first. If sleep predicts coffee vs running on Saturday mornings but not Monday to Friday, the sleep chip shows on Saturday morning and not on weekdays. A pair chip ("Short night, slower phase") appears only when the pair predicts better than either alone. `hidden` lenses never show chips.
 - **Wording:** plain facts ("Slept 5h 40m", "Waxing crescent"). No "your lens", no interpretation, no promise.
-- **Lens settings screen:** one plain status line per lens, such as "Seems to matter on Saturday mornings" or "No clear pattern yet". This is where a user sees what the app has learned, and where they turn a lens on or off. It is not on the daily screen.
+- **Nothing learned is listed.** The app never shows what it has noticed about the user, the branches, or the picks. A chip is the only place a learned pattern surfaces, and only where it applies. Lenses are switched on or off, and hidden or shown, from the Integrations list.
 - **`why`** (shown only if asked) states the pattern as a fact: "Short nights tend to go with slower picks on weekend mornings."
 
 Guardrails: astronomy comes from a calculation library, never from a model. Interpretation text comes from authored packs. Lenses shape the flavor and pace of everyday cards. They are not used to steer large decisions (money, health treatment, ending a relationship or job).
@@ -147,7 +149,7 @@ One record covers notes, day modes, check-ins and configuration:
 
 Any adjustment bumps `profile_version`. The client drops bundles planned against an older version and asks for a new one. After a note the screen shows what changed, with an undo, and never asks a follow-up question.
 
-## Branches (the life-goals screen)
+## Branches (invisible)
 
 | Field | Meaning |
 |---|---|
@@ -157,4 +159,4 @@ Any adjustment bumps `profile_version`. The client drops bundles planned against
 | `depends_on` | Tags: place, job, household, schedule, body_state |
 | `goal` | Linked goal id |
 
-Options carry the same `depends_on` tags. A life-event template (moved, new job, divorce, new baby, illness, loss) marks every branch and option with a matching tag as `needs_review`, then shows them in neutral wording to keep, change or drop. Nothing is deleted automatically.
+Branches and their statuses are never shown in the interface. They live in the model and change through adjustments: a typed note now, and a short chat or two-minute message later. A life event described in a note marks the matching branches and options `needs_review`, and the planner resolves them, asking the user at most one short question. Options carry the same `depends_on` tags. Nothing is deleted automatically: a branch is rested or retired, and can come back.

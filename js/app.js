@@ -9,11 +9,18 @@
   function load(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 
-  var GOALS = {
-    g_calm: "Calm", g_body: "Body", g_joy: "Joy", g_nutrition: "Eating", g_writing: "Writing",
-    g_creative: "Creative", g_followthrough: "Follow-through", g_admin: "Admin", g_rest: "Rest"
-  };
-  var LENS_NAMES = { sleep: "Sleep", moon: "Moon", cycle: "Cycle" };
+  var INTEGRATIONS = [
+    ["Schedule", [["gcal", "Google Calendar"], ["outlook", "Outlook"], ["acal", "Apple Calendar"]]],
+    ["Messages", [["messages", "Messages"], ["gmail", "Gmail"], ["whatsapp", "WhatsApp"]]],
+    ["Social and inspiration", [["instagram", "Instagram"], ["pinterest", "Pinterest boards"]]],
+    ["Wearables and hardware", [["sleep", "Sleep hours"], ["oura", "Oura"], ["garmin", "Garmin"], ["whoop", "Whoop"], ["fitbit", "Fitbit"], ["applehealth", "Apple Health"], ["healthconnect", "Health Connect"], ["withings", "Withings scale"], ["eightsleep", "Eight Sleep"], ["dexcom", "Dexcom glucose"]]],
+    ["Nutrition and training", [["mfp", "MyFitnessPal"], ["cronometer", "Cronometer"], ["strava", "Strava"]]],
+    ["Cycle", [["cycle", "Cycle days"], ["flo", "Flo"], ["clue", "Clue"], ["naturalcycles", "Natural Cycles"]]],
+    ["Sky and place", [["weather", "Weather and location"], ["moon", "Moon"], ["astrology", "Astrology"], ["transit", "Transit"]]],
+    ["Notes and files", [["drive", "Google Drive"], ["notion", "Notion"], ["applenotes", "Apple Notes"]]],
+    ["Focus", [["screentime", "Screen Time"], ["focusmodes", "Focus modes"], ["wellbeing", "Digital Wellbeing"]]]
+  ];
+  var LENS_IDS = { sleep: true, moon: true, cycle: true };
   var DAY_MODES = [["sick", "Sick"], ["travel", "Travelling"], ["big", "Big day"], ["rough", "Rough day"]];
   var DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var STOPS = [["8:10a", 490], ["11:40a", 700], ["2:10p", 850], ["8:30p", 1230]];
@@ -23,10 +30,9 @@
   var S = load("cc.state", {});
   var offers = load("cc.offers", []);
   var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false } }, load("cc.lenses", {}));
-  var goals = load("cc.goals", {});
   var notes = load("cc.notes", []);
   var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 5.67, cycleDay: 21 }, load("cc.test", {}));
-  var ui = { sheet: null, settings: false, drawer: false, draft: "", noteSent: false, calMsg: "" };
+  var ui = { sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "" };
   var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], place: null, moon: Ctx.moonFor(new Date()) };
 
   // ---- time and context ----
@@ -72,10 +78,7 @@
   function isActive(card) { return !!(card.signal && card.signal.energy > 0); }
 
   function cardsFor(x) {
-    var cards = x.view.cards.filter(function (c) {
-      var g = c.tags && c.tags.goal;
-      return !(g && (goals[g] === "resting" || goals[g] === "retired"));
-    });
+    var cards = x.view.cards.slice();
     if (!cards.length) { return [QUIET]; }
     var p = Learner.tilt(offers, x.slice, x.states);
     if (p === null) { return cards; }
@@ -116,6 +119,10 @@
   }
 
   // ---- rendering ----
+  function hamburger() {
+    return '<button type="button" class="hamburger" data-act="navmenu" aria-label="Menu" aria-expanded="' + (ui.menu ? "true" : "false") + '"><span></span><span></span><span></span></button>';
+  }
+
   function topHtml(x) {
     var v = x.view, title, sub;
     if (S.dayMode) {
@@ -127,8 +134,8 @@
       else if (v.skipped.length) { sub = "Nothing picked yet today."; }
       else { sub = v.id === bundle.root ? "Start of day." : "Nothing picked yet today."; }
     }
-    return '<header class="top"><div class="row"><h1>' + esc(title) + '</h1><div class="links">' +
-      '<button class="quiet" data-act="menu">Not this</button><button class="quiet" data-act="settings">Settings</button></div></div>' +
+    return '<header class="top"><div class="row">' + hamburger() + '<h1>' + esc(title) + '</h1>' +
+      '<button class="quiet" data-act="menu">Not this</button></div>' +
       '<p class="sub">' + esc(sub) + "</p></header>";
   }
 
@@ -145,14 +152,14 @@
             return '<li><label><input type="checkbox" data-check="' + i + '"' + ((S.checks || {})[i] ? " checked" : "") + "> " + esc(s) + "</label></li>";
           }).join("") + "</ul>";
         }
-        return '<div class="doing"><p>' + esc(p.text) + '</p><p class="muted">Options return at ' + Model.clock(v.waiting.until) + ".</p>" + steps + '<button class="pill" data-act="done">Done</button></div>';
+        return '<div class="doing"><p class="first">' + esc(p.text) + '</p><p class="muted">Options return at ' + Model.clock(v.waiting.until) + ".</p>" + steps + '<button class="pill" data-act="done">Done</button></div>';
       }
       return '<p class="empty">' + (p ? "Next" : "First") + " options at " + Model.clock(v.waiting.until) + ".</p>";
     }
-    return cards.map(function (c) {
+    return '<div class="stack">' + cards.map(function (c) {
       if (c.tags && c.tags.kind === "quiet") { return '<div class="card still">' + esc(c.text) + "</div>"; }
       return '<button class="card" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
-    }).join("");
+    }).join("") + "</div>";
   }
 
   function bottomHtml(x) {
@@ -191,39 +198,50 @@
     return '<div class="scrim" data-act="closesheet"></div><div class="sheet">' + body + '<button class="quiet" data-act="closesheet">Close</button></div>';
   }
 
-  function slicePhrase(s) { return s.replace("-", " ") + "s"; }
-
-  function settingsHtml() {
-    if (!ui.settings) { return ""; }
-    var lensRows = Object.keys(LENS_NAMES).map(function (id) {
-      var st = Learner.status(offers, id);
-      var status = !lenses[id].enabled ? "Off." : st.slices.length ? "Seems to matter on " + st.slices.map(slicePhrase).join(" and ") + "." : st.n < 20 ? "Not enough picks yet (" + st.n + ")." : "No clear pattern yet.";
-      return '<div class="item"><div class="name"><strong>' + LENS_NAMES[id] + '</strong></div><div class="status">' + esc(status) + "</div>" +
-        '<label><input type="checkbox" data-lens="' + id + '" data-field="enabled"' + (lenses[id].enabled ? " checked" : "") + "> On</label>" +
-        '<label><input type="checkbox" data-lens="' + id + '" data-field="hidden"' + (lenses[id].hidden ? " checked" : "") + "> Never show on screen</label></div>";
-    }).join("");
-    var goalRows = Object.keys(GOALS).map(function (id) {
-      var cur = goals[id] || "active";
-      var seg = [["active", "Keep"], ["resting", "Rest"], ["retired", "Retire"]].map(function (o) {
-        return '<button class="' + (cur === o[0] ? "on" : "") + '" data-act="goal" data-goal="' + id + '" data-val="' + o[0] + '">' + o[1] + "</button>";
-      }).join("");
-      return '<div class="item"><div class="name"><span>' + GOALS[id] + '</span><span class="seg">' + seg + "</span></div></div>";
-    }).join("");
-    var cal = Ctx.calendar.connected()
-      ? '<div class="status">Connected. Today\'s events are used when the test context is set to live.</div><button class="pill" data-act="caldisconnect">Disconnect</button>'
-      : '<div class="status">Not connected.</div><button class="pill" data-act="calconnect">Connect Google Calendar</button>';
-    var recent = notes.slice(-3).reverse().map(function (n) { return "<li>" + esc(n.text.slice(0, 70)) + "</li>"; }).join("");
-    return '<section class="settings"><header><h1>Settings</h1><button class="quiet" data-act="closesettings">Close</button></header><div class="body">' +
-      "<h2>What the app has noticed</h2>" + lensRows +
-      "<h2>Branches</h2><div class=\"status\" style=\"color:var(--muted);font-size:13.5px\">Rest hides a branch for now. Retire removes it. Nothing is deleted.</div>" + goalRows +
-      "<h2>Connections</h2><div class=\"item\"><div class=\"name\"><strong>Weather and location</strong></div><div class=\"status\">" + esc(live.place ? "Using " + live.place.label + "." : "Not loaded yet.") + '</div><button class="pill" data-act="locate">Use my location</button></div>' +
-      '<div class="item"><div class="name"><strong>Google Calendar</strong></div>' + cal + (ui.calMsg ? '<p class="note-line">' + esc(ui.calMsg) + "</p>" : "") + "</div>" +
-      (recent ? "<h2>Recent notes</h2><ul>" + recent + "</ul>" : "") +
-      '<h2>This device</h2><button class="pill" data-act="clearall">Clear everything stored here</button><p class="note-line">Picks, settings and notes stay in this browser.</p>' +
-      "</div></section>";
+  function menuHtml() {
+    if (!ui.menu) { return ""; }
+    var item = function (id, label) {
+      return '<button type="button" class="item" data-act="screen" data-screen="' + id + '"' + (ui.screen === id ? ' aria-current="true"' : "") + ">" + label + "</button>";
+    };
+    return '<button type="button" class="scrim" data-act="navmenu" aria-label="Close menu"></button>' +
+      '<nav class="menu" aria-label="Menu"><button type="button" class="hamburger" data-act="navmenu" aria-label="Close menu"><span></span><span></span><span></span></button>' +
+      '<p class="horizon">Menu</p>' + item("today", "Today") + item("integrations", "Integrations") +
+      '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
   }
 
-  function testHtml() {
+  function integrationRow(id, name) {
+    var on, detail, act, attrs = "", extra = "";
+    if (id === "gcal") {
+      on = Ctx.calendar.connected();
+      detail = on ? "Connected." : "Not connected.";
+      act = on ? "caldisconnect" : "calconnect";
+    } else if (id === "weather") {
+      on = !!live.place;
+      detail = live.place ? "Using " + live.place.label + "." : "Tap to use your location.";
+      act = "locate";
+    } else if (LENS_IDS[id]) {
+      on = lenses[id].enabled;
+      detail = on ? "On." : "Off.";
+      act = "lens";
+      attrs = ' data-lens="' + id + '"';
+      if (on) { extra = '<div class="integ-extra"><button type="button" class="quiet" data-act="lenshide" data-lens="' + id + '">' + (lenses[id].hidden ? "Show on screen" : "Hide on screen") + "</button></div>"; }
+    } else {
+      return '<button type="button" class="integ" disabled><span class="name">' + esc(name) + '</span><span class="detail">Planned.</span></button>';
+    }
+    var pressed = LENS_IDS[id] ? ' aria-pressed="' + (on ? "true" : "false") + '"' : "";
+    return '<button type="button" class="integ" data-act="' + act + '"' + attrs + pressed + '><span class="name">' + esc(name) + '</span><span class="detail">' + esc(detail) + "</span></button>" + extra;
+  }
+
+  function integrationsHtml() {
+    var groups = INTEGRATIONS.map(function (g) {
+      return '<section class="integ-group"><h2>' + esc(g[0]) + "</h2>" + g[1].map(function (r) { return integrationRow(r[0], r[1]); }).join("") + "</section>";
+    }).join("");
+    return '<header class="top"><div class="row">' + hamburger() + "<h1>Integrations</h1></div>" +
+      '<p class="sub">Apps, feeds and devices. Most are planned.' + (ui.calMsg ? " " + esc(ui.calMsg) : "") + "</p></header>" +
+      '<div class="screen">' + groups + "</div>";
+  }
+
+    function testHtml() {
     if (!test.on) { return ""; }
     var stops = STOPS.map(function (s) { return '<button class="' + (test.minutes === s[1] ? "on" : "") + '" data-act="time" data-m="' + s[1] + '">' + s[0] + "</button>"; }).join("");
     stops += '<button class="' + (test.minutes === null ? "on" : "") + '" data-act="time" data-m="now">Now</button>';
@@ -232,7 +250,6 @@
     if (ui.drawer) {
       var real = DOWS[new Date().getDay()];
       var dowOpts = '<option value="">Today (' + real + ")</option>" + DOWS.map(function (d, i) { return '<option value="' + i + '"' + (test.dow === i ? " selected" : "") + ">" + d + "</option>"; }).join("");
-      var sample = offers.filter(function (o) { return o.source === "sample"; }).length;
       drawer = '<div class="drawer"><h3>TEST TOOLS</h3>' +
         '<div class="ctl"><span>Day of week</span><select data-test="dow">' + dowOpts + "</select></div>" +
         '<div class="ctl"><span>Context</span><select data-test="live"><option value="0"' + (!test.live ? " selected" : "") + '>Sample day (Seattle, invented)</option><option value="1"' + (test.live ? " selected" : "") + ">Live weather and calendar</option></select></div>" +
@@ -240,23 +257,29 @@
         '<div class="ctl"><span>Sleep last night: <b id="sleepv">' + hm(test.sleep) + '</b></span><input type="range" min="4" max="9" step="0.1" value="' + test.sleep + '" data-test="sleep" data-out="sleepv"></div>' +
         '<div class="ctl"><span>Cycle day: <b id="cyclev">' + (test.cycleDay || "off") + '</b></span><input type="range" min="0" max="28" step="1" value="' + test.cycleDay + '" data-test="cycleDay" data-out="cyclev"></div>' +
         '<div class="btns"><button data-act="resetday">Replay the day from the start</button><button data-act="loadsample">Load 20 weeks of made-up picks</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
-        "<p>" + offers.length + " picks stored (" + sample + " made up). Add #test to the address to bring these back.</p></div>";
+        "<p>Add #test to the address to bring these back.</p></div>";
     }
     return bar + drawer;
   }
 
   function render() {
     if (!bundle) { app.innerHTML = '<p class="empty" style="margin-top:40vh">Loading</p>'; return; }
-    var x = compute();
-    var cards = cardsFor(x);
-    app.innerHTML = topHtml(x) + '<section class="mid">' + midHtml(x, cards) + "</section>" + bottomHtml(x) + sheetHtml(x) + settingsHtml() + testHtml();
-    x.shown = cards;
-    current = x;
+    var html;
+    if (ui.screen === "integrations") {
+      html = integrationsHtml();
+    } else {
+      var x = compute();
+      var cards = cardsFor(x);
+      html = topHtml(x) + '<section class="mid">' + midHtml(x, cards) + "</section>" + bottomHtml(x) + sheetHtml(x) + testHtml();
+      x.shown = cards;
+      current = x;
+    }
+    app.innerHTML = html + menuHtml();
   }
   var current = null;
 
   // ---- actions ----
-  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.goals", goals); save("cc.notes", notes); save("cc.test", test); }
+  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.notes", notes); save("cc.test", test); }
 
   function pick(id) {
     var x = compute();
@@ -324,9 +347,10 @@
       ui.draft = ""; ui.noteSent = true;
     }
     else if (act === "done") { if (S.cursor) { S.cursor.enterAt = nowMin(); } }
-    else if (act === "settings") { ui.settings = true; }
-    else if (act === "closesettings") { ui.settings = false; }
-    else if (act === "goal") { goals[el.getAttribute("data-goal")] = el.getAttribute("data-val"); }
+    else if (act === "navmenu") { ui.menu = !ui.menu; }
+    else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.menu = false; }
+    else if (act === "lens") { var lid = el.getAttribute("data-lens"); lenses[lid].enabled = !lenses[lid].enabled; }
+    else if (act === "lenshide") { var hid = el.getAttribute("data-lens"); lenses[hid].hidden = !lenses[hid].hidden; }
     else if (act === "time") {
       var m = el.getAttribute("data-m");
       test.minutes = m === "now" ? null : Number(m);
@@ -378,8 +402,6 @@
       else if (key === "live") { test.live = val === "1"; if (test.live) { loadLive(); } }
       else if (key === "energy") { test.energy = val; }
       else { test[key] = Number(val); }
-    } else if (t.getAttribute("data-lens")) {
-      lenses[t.getAttribute("data-lens")][t.getAttribute("data-field")] = t.checked;
     } else if (t.getAttribute("data-check") !== null) {
       S.checks = S.checks || {};
       S.checks[t.getAttribute("data-check")] = t.checked;
@@ -399,7 +421,7 @@
     if (test.live) { loadLive(); }
     render();
     setInterval(function () {
-      if (test.minutes === null && !ui.sheet && !ui.settings && !ui.drawer) { render(); }
+      if (test.minutes === null && !ui.sheet && !ui.menu && ui.screen === "today" && !ui.drawer) { render(); }
     }, 30000);
   }).catch(function () {
     app.innerHTML = '<p class="empty" style="margin:40vh 20px 0">Could not load the sample day. Serve this folder over http and reload.</p>';
