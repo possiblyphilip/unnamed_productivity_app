@@ -42,7 +42,7 @@
   function history() { return baked.concat(offers); }
   var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false } }, load("cc.lenses", {}));
   var notes = load("cc.notes", []);
-  var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true }, load("cc.test", {}));
+  var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true, auto: true }, load("cc.test", {}));
   test.sleep = snapSleep(test.sleep);
   var ui = { sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null };
   var holdTimer = null;
@@ -52,7 +52,7 @@
   // ---- time and context ----
   function todayKey() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
   function realMinutes() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
-  function nowMin() { return test.minutes !== null ? test.minutes : realMinutes(); }
+  function nowMin() { return Math.min(1438, (test.minutes !== null ? test.minutes : realMinutes()) + (S.skew || 0)); }
   function dowNow() { return test.dow !== null ? test.dow : new Date().getDay(); }
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
   function hm(h) { var t = Math.round(h * 60), m = t % 60; return Math.floor(t / 60) + "h" + (m ? " " + m + "m" : ""); }
@@ -294,7 +294,7 @@
     if (!test.on) { return ""; }
     var stops = STOPS.map(function (s) { return '<button class="' + (test.minutes === s[1] ? "on" : "") + '" data-act="time" data-m="' + s[1] + '">' + s[0] + "</button>"; }).join("");
     stops += '<button class="' + (test.minutes === null ? "on" : "") + '" data-act="time" data-m="now">Now</button>';
-    var bar = '<div class="testbar"><div class="tag">TEST ONLY</div><div class="stops">' + stops + '</div><button class="' + (ui.drawer ? "on" : "") + '" data-act="drawer">More</button></div>';
+    var bar = '<div class="testbar"><div class="tag">TEST ONLY</div><div class="clockread">' + Model.clock(nowMin()).replace(" am", "a").replace(" pm", "p") + '</div><div class="stops">' + stops + '</div><button class="' + (ui.drawer ? "on" : "") + '" data-act="drawer">More</button></div>';
     var drawer = "";
     if (ui.drawer) {
       var real = DOWS[new Date().getDay()];
@@ -305,7 +305,7 @@
         '<div class="ctl"><span>Energy</span><select data-test="energy"><option value="normal"' + (test.energy === "normal" ? " selected" : "") + '>Normal</option><option value="low"' + (test.energy === "low" ? " selected" : "") + ">Low</option></select></div>" +
         '<div class="ctl"><span>Sleep last night: <b id="sleepv">' + hm(test.sleep) + '</b></span><input type="range" min="5" max="9" step="2" value="' + test.sleep + '" data-test="sleep" data-out="sleepv"><div class="ticks"><span>5h</span><span>7h</span><span>9h</span></div></div>' +
         '<div class="ctl"><span>Cycle day: <b id="cyclev">' + (test.cycleDay || "off") + '</b></span><input type="range" min="0" max="28" step="1" value="' + test.cycleDay + '" data-test="cycleDay" data-out="cyclev"></div>' +
-        '<div class="btns"><label class="chk"><input type="checkbox" data-test="pause"' + (test.pause ? " checked" : "") + '> Pause 3 seconds after a pick</label><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
+        '<div class="btns"><label class="chk"><input type="checkbox" data-test="pause"' + (test.pause ? " checked" : "") + '> Pause 3 seconds after a pick</label><label class="chk"><input type="checkbox" data-test="auto"' + (test.auto ? " checked" : "") + '> Move time on after every 2 picks</label><button data-act="resetday">Replay the day (back to 8:10a, picks cleared)</button><button data-act="clearhistory">Clear picks</button><button data-act="hidetest">Hide test tools</button></div>' +
         "<p>Add #test to the address to bring these back.</p></div>";
     }
     return bar + drawer;
@@ -358,6 +358,13 @@
     if (offers.length > 3000) { offers = offers.slice(offers.length - 3000); }
     var child = Model.childFor(x.view.node, card);
     S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
+    if (test.auto) {
+      S.recent = (S.recent || []).concat(card.duration_min || 0);
+      if (S.recent.length >= 2) {
+        S.advance = Math.max(15, Math.ceil((S.recent[0] + S.recent[1]) / 5) * 5);
+        S.recent = [];
+      }
+    }
     S.cursor = { node: child || x.view.id, setAt: x.m };
     saveAll();
     var box = document.querySelector(".mid .stack");
@@ -368,9 +375,18 @@
     clearTimeout(holdTimer);
     clearTimeout(exitTimer);
     ui.hold = !!test.pause;
-    exitTimer = setTimeout(function () { ui.exiting = null; if (!ui.hold) { ui.enterOnce = true; } render(); }, how === "swipe" ? 450 : 900);
-    if (ui.hold) { holdTimer = setTimeout(function () { ui.hold = false; ui.enterOnce = true; render(); }, 3000); }
+    exitTimer = setTimeout(function () { ui.exiting = null; if (!ui.hold) { applyAdvance(); ui.enterOnce = true; } render(); }, how === "swipe" ? 450 : 900);
+    if (ui.hold) { holdTimer = setTimeout(function () { ui.hold = false; applyAdvance(); ui.enterOnce = true; render(); }, 3000); }
     render();
+  }
+
+  // Every second pick moves the day on by the time the two things took. It lands when the next set appears,
+  // so the title keeps showing what was just picked until then.
+  function applyAdvance() {
+    if (!S.advance) { return; }
+    S.skew = (S.skew || 0) + S.advance;
+    delete S.advance;
+    saveAll();
   }
 
   // Swipe left: a kind question first. "Not feeling it" or a few words, then the planner answers with a
@@ -510,6 +526,7 @@
     else if (act === "time") {
       var m = el.getAttribute("data-m");
       test.minutes = m === "now" ? null : Number(m);
+      S.skew = 0; S.recent = []; delete S.advance;
     }
     else if (act === "drawer") { ui.drawer = !ui.drawer; }
     else if (act === "resetday") { replayDay(); }
@@ -554,6 +571,7 @@
     if (key) {
       var val = t.type === "checkbox" ? t.checked : t.value;
       if (key === "pause") { test.pause = !!val; }
+      else if (key === "auto") { test.auto = !!val; S.recent = []; delete S.advance; }
       else if (key === "dow") { test.dow = val === "" ? null : Number(val); }
       else if (key === "live") { test.live = val === "1"; if (test.live) { loadLive(); } }
       else if (key === "energy") { test.energy = val; }

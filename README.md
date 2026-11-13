@@ -16,6 +16,8 @@ Open it on a phone. On iPhone: Share, then Add to Home Screen.
 
 A refresh starts the day from scratch (only the Google Calendar sign-in is kept). A made-up 20-week pick history is built in, so learned chips and ordering show from the first open. Sleep is a three-way selector (5, 7 or 9 hours) and each setting is a different plan of the day.
 
+The day moves on by itself: after every second pick the time jumps forward by what those two things took (at least 15 minutes), and the test strip shows the time.
+
 The red cross-hatched strip on the right is a test-only time scrubber. Add `#clean` to the address to hide it, `#test` to bring it back.
 
 ## Files

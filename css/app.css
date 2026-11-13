@@ -75,6 +75,7 @@ button.card:focus-visible, .pill:focus-visible, .row-btn:focus-visible, .integ:f
 .testbar .tag { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; font-weight: 700; letter-spacing: 1px; color: var(--hatch); background: var(--hatch-bg); padding: 4px 2px; }
 .testbar button { font-size: 11px; min-width: 38px; padding: 3px 2px; border: 1px solid var(--hatch); background: var(--hatch-bg); color: var(--hatch); border-radius: 5px; }
 .testbar button.on { background: var(--hatch); color: var(--hatch-bg); }
+.testbar .clockread { font-size: 11px; font-weight: 700; color: var(--hatch); background: var(--hatch-bg); padding: 2px 4px; border-radius: 4px; }
 .testbar .stops { display: flex; flex-direction: column; gap: 5px; }
 .drawer { position: absolute; top: 92px; right: 46px; width: 262px; max-height: calc(100% - 160px); overflow-y: auto; z-index: 11; background: var(--paper); color: #2a2926; border: 1px solid var(--hatch); border-radius: 10px 0 0 10px; padding: 10px 12px 12px; font-size: 13px; }
 .drawer h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1px; color: var(--hatch); }

@@ -6,7 +6,7 @@ Working draft. The server plans a day as a tree of offers (a bundle). The web ap
 
 1. **The UI is a tree walker.** It shows the current node, follows an outcome to a child, and reports events. Goals, habits, order, weather, energy and horizon balance are all decided when the tree is planned.
 2. **Inaction is an outcome.** Not choosing is recorded and has its own child.
-3. **Time is an input.** Nothing reads the system clock directly. Everything takes `now`, so the test scrubber can move it.
+3. **Time is an input.** Nothing reads the system clock directly. Everything takes `now`, so the test scrubber can move it. In this prototype the day also moves on by itself: after every second pick the clock jumps forward by what the two things took (at least 15 minutes), applied when the next set appears. On a real device time just passes.
 4. **Opaque tags.** `tags` and `signal` are carried and echoed back in events. The UI does not interpret them.
 5. **Copy is plain.** No praise and no explanations on the card face. An optional `why` is shown only if the user asks.
 
