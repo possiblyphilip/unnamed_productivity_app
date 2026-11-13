@@ -4,7 +4,7 @@ A card-based day guide. A throwaway prototype for working out the idea, not a pr
 
 **Live:** https://possiblyphilip.github.io/unnamed_productivity_app/
 
-Open it on a phone. On iPhone: Share, then Add to Home Screen. On Android: the browser menu, then Install app or Add to Home Screen. Opened from the home screen it has no address bar. In a browser tab a page cannot hide the bar by itself; on Android and desktop the menu has a Full screen item.
+Open it on a phone. On iPhone: Share, then Add to Home Screen. On Android: the browser menu, then Install app or Add to Home Screen. Opened from the home screen it has no address bar. The menu shows an Install app item when Chrome says the app can be installed. If neither appears, check you are in Chrome itself and not a link opened inside another app (messages, email, social). In a browser tab a page cannot hide the bar by itself; on Android and desktop the menu has a Full screen item.
 
 ## What it does
 

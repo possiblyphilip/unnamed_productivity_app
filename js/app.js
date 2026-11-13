@@ -282,6 +282,21 @@
 
   // A web page cannot hide the browser's address bar by itself. Added to the home screen it opens without
   // one (see manifest.webmanifest). Where the browser allows it, this goes full screen instead.
+  // The service worker does nothing but make the app installable.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () { /* optional */ }); });
+  }
+
+  // Chrome on Android and desktop tells the page when it can be installed. The menu then offers it.
+  var installEvent = null;
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    installEvent = e;
+    window.__installReady = true;
+    if (ui.menu) { render(); }
+  });
+  window.addEventListener("appinstalled", function () { installEvent = null; });
+
   function fullscreenOk() { return !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false); }
   function toggleFullscreen() {
     try {
@@ -298,6 +313,7 @@
     return '<button type="button" class="scrim" data-act="navmenu" aria-label="Close menu"></button>' +
       '<nav class="menu" aria-label="Menu"><button type="button" class="hamburger" data-act="navmenu" aria-label="Close menu"><span></span><span></span><span></span></button>' +
       '<p class="horizon">Menu</p>' + item("today", "Today") + item("integrations", "Integrations") +
+      (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
       (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
   }
@@ -559,6 +575,7 @@
     }
     else if (act === "navmenu") { ui.menu = !ui.menu; }
     else if (act === "fullscreen") { toggleFullscreen(); ui.menu = false; }
+    else if (act === "install") { if (installEvent) { installEvent.prompt(); installEvent = null; } ui.menu = false; }
     else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.menu = false; }
     else if (act === "lens") { var lid = el.getAttribute("data-lens"); lenses[lid].enabled = !lenses[lid].enabled; }
     else if (act === "lenshide") { var hid = el.getAttribute("data-lens"); lenses[hid].hidden = !lenses[hid].hidden; }
