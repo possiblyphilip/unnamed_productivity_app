@@ -312,7 +312,7 @@
     };
     return '<button type="button" class="scrim" data-act="navmenu" aria-label="Close menu"></button>' +
       '<nav class="menu" aria-label="Menu"><button type="button" class="hamburger" data-act="navmenu" aria-label="Close menu"><span></span><span></span><span></span></button>' +
-      '<p class="horizon">Menu</p>' + item("today", "Today") + item("integrations", "Integrations") + item("install", "Install help") +
+      '<p class="horizon">Unconscious</p>' + item("today", "Today") + item("integrations", "Integrations") + item("install", "Install help") +
       (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
       (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';

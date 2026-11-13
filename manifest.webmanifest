@@ -1,6 +1,6 @@
 {
-  "name": "Today",
-  "short_name": "Today",
+  "name": "Unconscious",
+  "short_name": "Unconscious",
   "description": "A card-based day guide.",
   "start_url": "./",
   "scope": "./",
