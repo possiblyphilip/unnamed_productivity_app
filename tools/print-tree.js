@@ -7,11 +7,13 @@ const Sample = require(path.join(__dirname, "..", "js", "sample.js"));
 
 const depth = Number(process.argv[2]) || 2;
 const energy = process.argv.indexOf("low") !== -1 ? "low" : "normal";
-const b = Planner.plan(Sample.context, { energy: energy });
+const sess = Planner.session(Sample.context, { energy: energy });
+sess.expand(sess.bundle.root, depth + 1);
+const b = sess.bundle;
 const label = function (id) { return b.cards[id].label; };
 
 console.log("blocks: " + b.assumptions.blocks.join(" | "));
-console.log("energy: " + energy + ", " + Object.keys(b.nodes).length + " nodes\n");
+console.log("energy: " + energy + "\n");
 
 function show(id, level, via) {
   const n = b.nodes[id];

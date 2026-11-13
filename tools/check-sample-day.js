@@ -38,6 +38,8 @@ function checkTree(label, bundle) {
       const at = OPT[cid].at[n.type] || {};
       (at.needs || []).forEach(function (need) { if (n.facts.indexOf(need) === -1) { bad(where + ": " + cid + " shown without " + need); } });
       (OPT[cid].skipIf || []).forEach(function (s) { if (n.facts.indexOf(s) !== -1) { bad(where + ": " + cid + " shown despite " + s); } });
+      const gives = OPT[cid].gives || [];
+      if (gives.length && gives.every(function (g) { return n.facts.indexOf(g) !== -1; })) { bad(where + ": " + cid + " shown though it has nothing left to give"); }
       const child = n.children["picked:" + cid];
       if (!child || !nodes[child]) { bad(where + ": no child for pick " + cid); }
       else if (nodes[child].cards.indexOf(cid) !== -1) { bad(where + ": " + cid + " comes back after being picked"); }
@@ -99,6 +101,8 @@ const tests = [
   ["after coffee", after(normal, ["coffee_window"], "08:10"), "eat_first,stretch_shower,write_25,putoff_ten"],
   ["after shower: dressing comes next, no perfume yet", after(normal, ["stretch_shower"], "08:10"), "coffee_window,eat_first,get_dressed"],
   ["after shower and dressing", after(normal, ["stretch_shower", "get_dressed"], "08:10"), "coffee_window,eat_first,perfume,market_flowers"],
+  ["after the market walk: coffee and eggs are gone, a croissant is next", after(normal, ["stretch_shower", "get_dressed", "market_flowers"], "08:10"), "croissant,flowers_water,perfume"],
+  ["after the croissant: fed and caffeinated, so writing opens up", after(normal, ["stretch_shower", "get_dressed", "market_flowers", "croissant"], "08:10"), "flowers_water,write_25,putoff_ten,two_emails"],
   ["reroll after coffee shows the next set", (function () {
     const n = normal.nodes[normal.nodes[normal.root].children["picked:coffee_window"]];
     return { cards: normal.nodes[n.children.reroll].cards, node: n };
@@ -130,6 +134,30 @@ titles.forEach(function (t) {
   if (got !== t[2]) { bad("title at " + t[0] + ": expected " + t[2] + ", got " + got); }
   console.log((got === t[2] ? "ok   " : "FAIL ") + "title at " + t[0] + "  ->  " + got);
 });
+
+// the lazy session the app uses: always something to pick deep into the morning, and progress survives a replan
+(function () {
+  const sess = Planner.session(Sample.context, { energy: "normal" });
+  const b = sess.bundle;
+  let id = b.root;
+  const path = ["stretch_shower", "get_dressed", "market_flowers", "croissant", "write_25", "flowers_water", "perfume", "two_emails"];
+  path.forEach(function (p) {
+    const v = Model.advance(b, { node: id }, mins("08:10"), sess.ensure);
+    if (!v.node || v.cards.map(function (x) { return x.id; }).indexOf(p) === -1) { bad("lazy: " + p + " is not on offer after " + (path.slice(0, path.indexOf(p)).join(", ") || "nothing")); return; }
+    id = v.node.children["picked:" + p];
+  });
+  const end = Model.advance(b, { node: id }, mins("08:10"), sess.ensure);
+  const ok = end.cards.length > 0;
+  if (!ok) { bad("lazy: the morning goes quiet after " + path.length + " picks"); }
+  console.log((ok ? "ok   " : "FAIL ") + "eight picks deep in the morning there is still something to choose  ->  " + (end.cards.map(function (x) { return x.id; }).join(",") || "(quiet)"));
+
+  const low = Planner.session(Sample.context, { energy: "low" });
+  const restored = low.restore(id);
+  const rv = Model.advance(low.bundle, { node: restored }, mins("08:10"), low.ensure);
+  const keep = restored === id && rv.node && rv.node.facts.indexOf("market") !== -1;
+  if (!keep) { bad("lazy: progress is lost when the plan is rebuilt"); }
+  console.log((keep ? "ok   " : "FAIL ") + "a rebuilt plan keeps where you were");
+})();
 
 console.log("");
 console.log(Object.keys(normal.nodes).length + " nodes, " + Object.keys(normal.cards).length + " cards (normal energy); " + Object.keys(low.nodes).length + " nodes (low energy)");

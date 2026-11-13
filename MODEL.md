@@ -60,12 +60,13 @@ The planner searches the day and writes one node per situation.
 
 - **Blocks:** the day is cut into blocks (morning, afternoon, evening, night) and the calendar adds a "before" and a "during" block around each event.
 - **Options** say which blocks they can appear in, with a rank per block, what must already be true (`needs`), what they make true (`gives`), and when to skip them (`skipIf`). A flag marks options that are demanding, gentle, or only for low energy.
+- **Retiring options:** an option is skipped once everything it gives is already true, and `skipIf` retires it for other reasons. A market walk retires coffee, eggs and toast, and a lap round the block, because a croissant and coffee on the way back takes their place.
 - **Facts** are what the user has done. `did_<option>` stops an option repeating within a block. `dressed` and `fed` carry into later blocks; the rest are dropped when a block ends.
 - **Conditions** are applied here, not in the app: an option that needs dry weather or daylight appears only if the block is mostly dry or light, and low energy removes demanding options and puts gentle ones first.
 - **Paging:** a node shows the next four candidates by rank. If there are more, `reroll` leads to a node with the following four.
-- **Depth:** a block stops offering options after four picks and goes quiet until the block ends.
+- **Depth:** a block goes quiet after twelve picks, which a normal day does not reach.
 
-This prototype plans the whole tree up front, about 1,100 nodes for the sample day. A real server would plan a branch or two ahead and refresh as picks, time and context invalidate what it planned.
+The planner works lazily. A node is created with its cards, and its children are created the first time the app arrives there, so the app always has the next screen for every card it could pick and the work stays small. A new plan (energy changed, weather arrived) restores the node the user was on, so progress through the morning is kept. For tests, `plan()` builds the whole tree with a lower cap, about 1,500 nodes for the sample day.
 
 ## Option bank (server side, copied locally for fallback)
 

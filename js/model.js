@@ -45,13 +45,14 @@
   // Which node is current for this cursor and time. Pure: it never changes the cursor, so a test
   // clock can move forward and back. Only picks and rerolls move the cursor. The app does no
   // planning: when a node's window has ended it follows the node's `expired` child.
-  function advance(bundle, cursor, nowMin) {
+  function advance(bundle, cursor, nowMin, ensure) {
     var id = cursor.node && bundle.nodes[cursor.node] ? cursor.node : bundle.root;
     var skipped = [];
     var guard = 0;
     while (id && guard++ < 80) {
       var n = bundle.nodes[id];
       if (!n) { break; }
+      if (ensure) { ensure(id); }
       if (nowMin >= mins(n.window[1])) { skipped.push(id); id = n.children.expired; continue; }
       return { id: id, node: n, cards: n.cards.map(function (c) { return bundle.cards[c]; }), skipped: skipped };
     }

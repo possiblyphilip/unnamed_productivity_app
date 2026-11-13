@@ -16,24 +16,25 @@
   var mins = Model.mins, hhmm = Model.hhmm;
   var PERSIST = { dressed: true, fed: true };
   var PAGE = 4;
-  var MAX_DONE = 4;
 
   function opt(id, text, label, x) { x.id = id; x.text = text; x.label = label; return x; }
 
   var OPTIONS = [
-    opt("coffee_window", "Slow coffee by the window, ten minutes", "Coffee by the window", { dur: 10, goal: "g_calm", gentle: true, signal: { overwhelm: -1 }, gives: ["coffee"], at: { morning: { rank: 1 } } }),
-    opt("eat_first", "Eggs and toast before anything else", "Eggs and toast", { dur: 15, goal: "g_nutrition", signal: { energy: 1 }, gives: ["fed"], at: { morning: { rank: 2 } } }),
+    opt("coffee_window", "Slow coffee by the window, ten minutes", "Coffee by the window", { dur: 10, goal: "g_calm", gentle: true, signal: { overwhelm: -1 }, gives: ["coffee"], skipIf: ["market"], at: { morning: { rank: 1 } } }),
+    opt("eat_first", "Eggs and toast before anything else", "Eggs and toast", { dur: 15, goal: "g_nutrition", signal: { energy: 1 }, gives: ["fed"], skipIf: ["market"], at: { morning: { rank: 2 } } }),
     opt("stretch_shower", "Stretch, then shower first", "Stretch and shower", { kind: "variation", dur: 25, goal: "g_body", signal: { energy: 1 }, gives: ["showered"], at: { morning: { rank: 3 } } }),
     opt("get_dressed", "Get dressed", "Getting dressed", { dur: 10, gives: ["dressed"], at: { morning: { rank: 4, needs: ["showered"] } } }),
     opt("write_25", "Write for twenty-five minutes", "Writing", { dur: 25, goal: "g_writing", horizon: "medium", demanding: true, signal: { energy: 1 }, at: { morning: { rank: 5, needs: ["coffee"] }, afternoon: { rank: 1 } } }),
     opt("putoff_ten", "Ten minutes on the thing you keep putting off", "Ten minutes on the thing you were putting off", { kind: "variation", dur: 10, goal: "g_followthrough", horizon: "medium", demanding: true, signal: { overwhelm: 1 }, at: { morning: { rank: 6, needs: ["coffee"] } } }),
     opt("two_emails", "Answer the two emails that are waiting", "Two emails", { kind: "variation", dur: 15, goal: "g_admin", at: { morning: { rank: 7, needs: ["coffee"] } } }),
     opt("perfume", "Put on the good perfume.", "Perfume on", { kind: "flirty", dur: 2, goal: "g_joy", signal: { mood: 1, social: 1 }, at: { morning: { rank: 8, needs: ["dressed"] } } }),
-    opt("market_flowers", "Walk to the market for flowers. Bring an umbrella.", "Walk to the market", { kind: "wild", dur: 40, goal: "g_joy", horizon: "medium", demanding: true, signal: { energy: 1, social: 1 }, at: { morning: { rank: 9, needs: ["dressed"] } } }),
+    opt("market_flowers", "Walk to the market for flowers. Bring an umbrella.", "Walk to the market", { kind: "wild", dur: 40, goal: "g_joy", horizon: "medium", demanding: true, signal: { energy: 1, social: 1 }, gives: ["market"], at: { morning: { rank: 9, needs: ["dressed"] } } }),
+    opt("croissant", "Pick up a croissant and a coffee on the way back", "Croissant and coffee", { dur: 15, goal: "g_nutrition", signal: { mood: 1 }, gives: ["fed", "coffee"], skipIf: ["fed"], at: { morning: { rank: 0, needs: ["market"] } } }),
+    opt("flowers_water", "Put the flowers in water", "Flowers in water", { dur: 5, goal: "g_joy", signal: { mood: 1 }, at: { morning: { rank: 2, needs: ["market"] } } }),
     opt("tidy_surface", "Put a playlist on and clear one surface", "Clearing a surface", { kind: "wild", dur: 10, goal: "g_calm", signal: { energy: 1 }, at: { morning: { rank: 10, needs: ["coffee"] } } }),
     opt("sketch_15", "Sketch for fifteen minutes, any subject", "Sketching", { kind: "variation", dur: 15, goal: "g_creative", horizon: "medium", signal: { mood: 1 }, at: { morning: { rank: 11, needs: ["coffee"] }, afternoon: { rank: 2 } } }),
     opt("read_20", "Read something for twenty minutes", "Reading", { dur: 20, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { morning: { rank: 12, needs: ["coffee"] }, afternoon: { rank: 7 }, evening: { rank: 4 } } }),
-    opt("walk_block", "Walk around the block before the rain picks up", "Walk around the block", { kind: "wild", dur: 15, goal: "g_body", signal: { energy: 1 }, at: { morning: { rank: 13, needs: ["dressed"] } } }),
+    opt("walk_block", "Walk around the block before the rain picks up", "Walk around the block", { kind: "wild", dur: 15, goal: "g_body", signal: { energy: 1 }, skipIf: ["market"], at: { morning: { rank: 13, needs: ["dressed"] } } }),
     opt("park_walk", "Walk to the nearest park. 12 minutes, good light right now.", "Walk to the park", { kind: "wild", dur: 40, goal: "g_joy", horizon: "medium", demanding: true, dry: true, daylight: true, signal: { energy: 1, mood: 1 }, at: { afternoon: { rank: 3 } } }),
     opt("coffee_light", "Coffee somewhere with nice lighting. Wear something you like.", "Coffee out", { kind: "flirty", dur: 45, goal: "g_joy", signal: { mood: 1, social: 1 }, at: { afternoon: { rank: 4, needs: ["dressed"] } } }),
     opt("tea_window", "Tea by the window", "Tea by the window", { dur: 15, goal: "g_rest", gentle: true, signal: { overwhelm: -1 }, at: { afternoon: { rank: 5 }, evening: { rank: 6 } } }),
@@ -106,13 +107,14 @@
 
   function pool(block, facts, opts, ctx) {
     var done = Object.keys(facts).filter(function (k) { return k.indexOf("did_") === 0; }).length;
-    if (done >= MAX_DONE) { return []; }
+    if (done >= (opts.maxDone || 12)) { return []; }
     var low = opts.energy === "low", out = [];
     OPTIONS.forEach(function (o) {
       var at = o.at[block.type];
       if (!at || facts["did_" + o.id]) { return; }
       if ((at.needs || []).some(function (n) { return !facts[n]; })) { return; }
       if ((o.skipIf || []).some(function (n) { return facts[n]; })) { return; }
+      if (o.gives && o.gives.every(function (g) { return facts[g]; })) { return; }
       if (o.dry && !dryOk(ctx, block)) { return; }
       if (o.daylight && !lightOk(ctx, block)) { return; }
       if (low ? o.demanding : o.onlyLow) { return; }
@@ -128,7 +130,19 @@
     return f;
   }
 
-  function plan(ctx, opts) {
+  var BY_ID = {};
+  OPTIONS.forEach(function (o) { BY_ID[o.id] = o; });
+
+  function factsObj(list) {
+    var f = {};
+    list.forEach(function (k) { f[k] = true; });
+    return f;
+  }
+
+  // A session plans lazily. A node is created with its cards; its children are created when the app
+  // arrives at it (ensure). So the work stays small however long the day is, and the app always has
+  // the next screen for every card it could pick.
+  function session(ctx, opts) {
     opts = opts || {};
     var blocks = makeBlocks(ctx), nodes = {}, cards = {};
 
@@ -141,37 +155,69 @@
       };
     }
 
-    function build(bi, facts, offset) {
-      var key = "b" + bi + "." + offset + "." + Object.keys(facts).sort().join("+");
+    function node(bi, facts, offset) {
+      var names = Object.keys(facts).sort();
+      var key = "b" + bi + "." + offset + "." + names.join("+");
       if (nodes[key]) { return key; }
       var block = blocks[bi];
-      var node = {
-        title: block.title, type: block.type, window: [hhmm(block.s), hhmm(block.e)],
-        cards: [], reroll: false, quiet: null, facts: Object.keys(facts).sort(), children: {}
-      };
-      nodes[key] = node;
       var cands = pool(block, facts, opts, ctx);
       var shown = cands.slice(offset * PAGE, offset * PAGE + PAGE);
-      if (!shown.length) { node.quiet = block.type === "night" ? "Nothing needed tonight." : "Nothing needed right now."; }
-      shown.forEach(function (o) {
-        useCard(o);
-        node.cards.push(o.id);
-        var f = Object.assign({}, facts);
-        f["did_" + o.id] = true;
-        (o.gives || []).forEach(function (g) { f[g] = true; });
-        node.children["picked:" + o.id] = build(bi, f, 0);
-      });
-      if (offset === 0 && cands.length > PAGE) { node.reroll = true; node.children.reroll = build(bi, facts, 1); }
-      node.children.expired = bi + 1 < blocks.length ? build(bi + 1, persist(facts), 0) : null;
+      shown.forEach(useCard);
+      nodes[key] = {
+        title: block.title, type: block.type, window: [hhmm(block.s), hhmm(block.e)],
+        cards: shown.map(function (o) { return o.id; }), reroll: offset === 0 && cands.length > PAGE,
+        quiet: shown.length ? null : (block.type === "night" ? "Nothing needed tonight." : "Nothing needed right now."),
+        facts: names, bi: bi, off: offset, pending: true, exp: 0, children: {}
+      };
       return key;
     }
 
-    var rootId = build(0, {}, 0);
-    return {
-      schema: "bundle/0.2", bundle_id: "demo-" + ctx.day, root: rootId, cards: cards, nodes: nodes,
+    function ensure(key) {
+      var n = nodes[key];
+      if (!n || !n.pending) { return; }
+      var facts = factsObj(n.facts);
+      n.cards.forEach(function (id) {
+        var f = Object.assign({}, facts);
+        f["did_" + id] = true;
+        (BY_ID[id].gives || []).forEach(function (g) { f[g] = true; });
+        n.children["picked:" + id] = node(n.bi, f, 0);
+      });
+      if (n.reroll) { n.children.reroll = node(n.bi, facts, 1); }
+      n.children.expired = n.bi + 1 < blocks.length ? node(n.bi + 1, persist(facts), 0) : null;
+      n.pending = false;
+    }
+
+    function expand(key, depth) {
+      var n = nodes[key];
+      if (!n || n.exp >= depth) { return; }
+      ensure(key);
+      n.exp = depth;
+      if (depth <= 1) { return; }
+      Object.keys(n.children).forEach(function (k) { if (n.children[k]) { expand(n.children[k], depth - 1); } });
+    }
+
+    // After a new session replaces an old one (energy changed, weather arrived), bring back the node
+    // the user was on so their progress through the morning is not lost.
+    function restore(key) {
+      var m = /^b(\d+)\.(\d+)\.(.*)$/.exec(key || "");
+      if (!m || Number(m[1]) >= blocks.length) { return null; }
+      return node(Number(m[1]), factsObj(m[3].split("+").filter(Boolean)), Number(m[2]));
+    }
+
+    var root = node(0, {}, 0);
+    var bundle = {
+      schema: "bundle/0.2", bundle_id: "demo-" + ctx.day, root: root, cards: cards, nodes: nodes,
       assumptions: { day: ctx.day, energy: opts.energy || "normal", blocks: blocks.map(function (b) { return b.type + " " + hhmm(b.s) + "-" + hhmm(b.e); }) }
     };
+    return { bundle: bundle, ensure: ensure, expand: expand, restore: restore };
   }
 
-  return { plan: plan, OPTIONS: OPTIONS, makeBlocks: makeBlocks };
+  // The whole tree at once, with a cap on picks per block. For tests and for printing.
+  function plan(ctx, opts) {
+    var s = session(ctx, Object.assign({ maxDone: 5 }, opts || {}));
+    s.expand(s.bundle.root, Infinity);
+    return s.bundle;
+  }
+
+  return { plan: plan, session: session, OPTIONS: OPTIONS, makeBlocks: makeBlocks };
 });

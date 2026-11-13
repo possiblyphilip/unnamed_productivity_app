@@ -28,6 +28,7 @@
 
   var bundle = null;
   var planSig = "";
+  var sess = null;
   var S = load("cc.state", {});
   var offers = load("cc.offers", []);
   var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false } }, load("cc.lenses", {}));
@@ -72,9 +73,10 @@
     if (S.day !== todayKey()) { S = { day: todayKey() }; }
     if (S.cursor && S.cursor.setAt > m) { S = { day: S.day, dayMode: S.dayMode }; }
     var sig = [test.live ? 1 : 0, test.energy, live.weather.length, live.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
-    if (sig !== planSig) { bundle = Planner.plan(c, { energy: test.energy }); planSig = sig; }
+    if (sig !== planSig) { sess = Planner.session(c, { energy: test.energy }); bundle = sess.bundle; planSig = sig; }
     var cursor = S.cursor || { node: bundle.root, setAt: 0 };
-    var view = Model.advance(bundle, cursor, m);
+    if (cursor.node && !bundle.nodes[cursor.node]) { sess.restore(cursor.node); }
+    var view = Model.advance(bundle, cursor, m, sess.ensure);
     return { m: m, c: c, cursor: cursor, view: view, live: Model.liveFor(c, m), states: lensStates(c), slice: Learner.sliceOf(dowNow(), m) };
   }
 
