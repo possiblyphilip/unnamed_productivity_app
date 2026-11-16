@@ -139,11 +139,6 @@ button.card:focus-visible, .pill:focus-visible, .row-btn:focus-visible, .integ:f
   .stack.enter .card, .top h1.new { animation: none; }
 }
 
-/* Under the cards: Back inside a category */
-.nav { display: flex; gap: 14px; justify-content: center; align-items: center; flex-shrink: 0; min-height: 36px; }
-.nav button { border: 0; background: transparent; color: var(--ink); }
-.nav button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; border-radius: 999px; }
-.nav .back { text-decoration: underline; text-underline-offset: 3px; font-size: 0.95rem; padding: 8px 12px; }
 .card.fresh { animation: fadeIn 0.8s ease both; }
 @media (prefers-reduced-motion: reduce) { .card.fresh { animation: none; } }
 
@@ -152,3 +147,18 @@ button.card:focus-visible, .pill:focus-visible, .row-btn:focus-visible, .integ:f
 .swatch { display: inline-flex; flex: none; width: 54px; height: 32px; border-radius: 10px; overflow: hidden; border: 1px solid rgba(0, 0, 0, 0.18); }
 .swatch i { flex: 1; }
 .row-btn[aria-pressed="true"] { outline: 3px solid var(--card-ink); outline-offset: -3px; }
+
+button.chip { border: 0; font: inherit; font-size: 0.85rem; color: var(--ink); cursor: pointer; }
+button.chip.lens { border: 1px solid var(--chip-line); }
+button.chip:active { background: var(--chip-line); }
+
+/* The stats screen uses the chosen palette like every other screen. */
+.stat { background: var(--card); color: var(--card-ink); border-radius: 18px; padding: 12px 18px 14px; margin-bottom: 12px; }
+.stat h2 { margin: 0 0 6px; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--card-ink); opacity: 0.75; }
+.stat-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid rgba(0, 0, 0, 0.1); }
+.stat-row:first-of-type { border-top: 0; }
+.stat-row b { font-weight: 600; text-align: right; }
+.stat-row.goal { flex-wrap: wrap; }
+.bar { flex-basis: 100%; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.1); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.stat .note { margin: 6px 0 0; font-size: 0.85rem; color: var(--card-ink); opacity: 0.75; }

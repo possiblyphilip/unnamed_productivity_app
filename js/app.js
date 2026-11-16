@@ -283,13 +283,7 @@
       if (c.tags && c.tags.kind === "quiet") { return '<div class="card still">' + esc(c.text) + "</div>"; }
       var away = ui.reject && ui.reject.id === c.id ? " away" : "";
       return '<button class="card' + away + (fresh && i >= shownN ? " fresh" : "") + '" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
-    }).join("") + "</div>" + navHtml(x);
-  }
-
-  // Under the cards: Back, inside a category.
-  function navHtml(x) {
-    var back = x.view.node.children.back;
-    return back ? '<div class="nav"><button type="button" class="back" data-act="nav" data-to="back">Back</button></div>' : "";
+    }).join("") + "</div>";
   }
 
   // Pushing the cards up (swipe up, scroll, arrow down) brings in the rest. They stay until the screen changes.
@@ -302,11 +296,57 @@
     ui.revealAnim = false;
   }
 
+  // Which section of the stats screen a chip opens onto.
+  function focusFor(text) {
+    if (/moon|season/i.test(text)) { return "sky"; }
+    if (/rain|dry|sunset|\bin \d+ min|\bat \d/i.test(text)) { return "now"; }
+    return "body";
+  }
+
   function bottomHtml(x) {
     var ops = operational(x).slice(0, 2);
-    var chips = (ops.length ? ['<span class="chip">' + esc(ops.join(" \u00b7 ")) + "</span>"] : [])
-      .concat(lensChips(x).map(function (t) { return '<span class="chip lens">' + esc(t) + "</span>"; }));
+    function chip(text, cls) { return '<button type="button" class="chip' + cls + '" data-act="stats" data-focus="' + focusFor(text) + '">' + esc(text) + "</button>"; }
+    var chips = (ops.length ? [chip(ops.join(" \u00b7 "), "")] : [])
+      .concat(lensChips(x).map(function (t) { return chip(t, " lens"); }));
     return '<footer class="bottom">' + chips.join("") + "</footer>";
+  }
+
+  // The stats screen. Everything here is invented: the day comes from the sample, the body numbers from the
+  // test settings, and the goal progress is a placeholder until there is a real model behind it.
+  function statRow(label, value) { return '<div class="stat-row"><span>' + esc(label) + "</span><b>" + esc(value) + "</b></div>"; }
+  function goalRow(label, value, pct) {
+    return '<div class="stat-row goal"><span>' + esc(label) + "</span><b>" + esc(value) + '</b><i class="bar"><i style="width:' + pct + '%"></i></i></div>';
+  }
+
+  function statsHtml(x) {
+    var c = x.c, rows;
+    var nowRows = operational(x).map(function (t) { return statRow("", t); });
+    var calendar = (c.calendar || []).map(function (e) { return statRow(e.title, Model.clock(Model.mins(e.start)) + " to " + Model.clock(Model.mins(e.end))); });
+    var body = [statRow("Sleep", hm(test.sleep))].concat(fitnessLines(x).map(function (t) {
+      var st = /^([\d,]+) steps/.exec(t);
+      if (st) { return statRow("Steps so far", st[1]); }
+      var m = /^(.*?)\s+([\d,]+)(\s.*)?$/.exec(t);
+      return m ? statRow(m[1] + (m[3] || ""), m[2]) : statRow("", t);
+    }));
+    if (test.cycleDay > 0) { body.push(statRow("Cycle", cap(Learner.cyclePhase(test.cycleDay)) + " phase, day " + test.cycleDay)); }
+    var sky = [statRow("Moon", c.moon.name)];
+    if (c.moon.sign) { sky.push(statRow("Moon sign", c.moon.sign), statRow("Season", sunSign(c.day))); }
+    sky.push(statRow("Sunrise and sunset", Model.clock(Model.mins(c.sunrise)) + " and " + Model.clock(Model.mins(c.sunset))));
+    var goals = [goalRow("Today", "13\u00b0 closer", 28), goalRow("This week", "5 steps closer", 40), goalRow("This year", "45\u00b0 off trajectory", 55)];
+    var sections = {
+      now: ["Right now", nowRows.concat(calendar)],
+      body: ["Body", body],
+      sky: ["Sky", sky],
+      goals: ["Goals", goals, "Placeholder numbers. There is no progress model behind them yet."]
+    };
+    var order = ["now", "body", "sky", "goals"];
+    if (ui.statsFocus && sections[ui.statsFocus]) { order = [ui.statsFocus].concat(order.filter(function (k) { return k !== ui.statsFocus; })); }
+    var html = order.map(function (k) {
+      var sec = sections[k];
+      return '<section class="stat"><h2>' + sec[0] + "</h2>" + (sec[1].length ? sec[1].join("") : '<p class="note">Nothing right now.</p>') + (sec[2] ? '<p class="note">' + sec[2] + "</p>" : "") + "</section>";
+    }).join("");
+    return '<header class="top"><div class="row">' + hamburger() + "<h1>Stats</h1></div>" +
+      '<p class="sub"></p></header><div class="screen">' + html + "</div>";
   }
 
   function sheetHtml(x) {
@@ -371,7 +411,7 @@
     };
     return '<button type="button" class="scrim" data-act="navmenu" aria-label="Close menu"></button>' +
       '<nav class="menu" aria-label="Menu"><button type="button" class="hamburger" data-act="navmenu" aria-label="Close menu"><span></span><span></span><span></span></button>' +
-      '<p class="horizon">Unconscious</p>' + item("today", "Today") + item("integrations", "Integrations") + item("install", "Install help") +
+      '<p class="horizon">Unconscious</p>' + item("today", "Today") + item("stats", "Stats") + item("integrations", "Integrations") + item("install", "Install help") +
       '<button type="button" class="item" data-act="palettesheet">Colors</button>' +
       '<button type="button" class="item" data-act="notesheet">Tell it something</button>' +
       '<button type="button" class="item" data-act="daysheet">Off-plan today</button>' +
@@ -479,6 +519,11 @@
       html = integrationsHtml();
     } else if (ui.screen === "install") {
       html = installHtml();
+    } else if (ui.screen === "stats") {
+      var sx = compute();
+      sx.shown = [];
+      current = sx;
+      html = statsHtml(sx) + testHtml();
     } else {
       var x = compute();
       var cards = shownCards(x);
@@ -486,7 +531,7 @@
       x.shown = cards;
       current = x;
     }
-    app.innerHTML = html + menuHtml();
+        app.innerHTML = html + menuHtml();
     ui.enterOnce = false;
     ui.titleNew = false;
     if (bundle && precomputed !== sess && ui.screen === "today") { precomputed = sess; setTimeout(precompute, 30); }
@@ -668,6 +713,10 @@
     if (swallowClick) { swallowClick = false; return; }
     if (ui.drawer && !e.target.closest(".drawer, .testbar")) { ui.drawer = false; render(); return; }
     var el = e.target.closest("[data-act]");
+    // Nothing on the stats screen is interactive, so a tap anywhere on it (menu button aside) goes back.
+    if (!el && ui.screen === "stats" && !ui.menu && !e.target.closest(".testbar, .drawer")) { ui.screen = "today"; render(); return; }
+    // Inside a category, a tap on the background (off the cards) goes back.
+    if (!el && ui.screen === "today" && !ui.menu && !ui.sheet && !e.target.closest(".card, .testbar, .drawer, .chip, .bottom, .top")) { goTo("back"); return; }
     if (!el || el.disabled) { return; }
     var act = el.getAttribute("data-act");
     if (act === "pick") { pick(el.getAttribute("data-id"), "tap"); return; }
@@ -693,11 +742,12 @@
       notes.push({ t: Date.now(), text: text });
       ui.draft = ""; ui.noteSent = true;
     }
+    else if (act === "stats") { ui.screen = "stats"; ui.statsFocus = el.getAttribute("data-focus"); }
     else if (act === "navmenu") { ui.menu = !ui.menu; }
     else if (act === "rediag") { runDiag(); }
     else if (act === "fullscreen") { toggleFullscreen(); ui.menu = false; }
     else if (act === "install") { if (installEvent) { installEvent.prompt(); installEvent = null; } ui.menu = false; }
-    else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.menu = false; if (ui.screen === "install") { runDiag(); } }
+    else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.statsFocus = null; ui.menu = false; if (ui.screen === "install") { runDiag(); } }
     else if (act === "lens") { var lid = el.getAttribute("data-lens"); lenses[lid].enabled = !lenses[lid].enabled; }
     else if (act === "lenshide") { var hid = el.getAttribute("data-lens"); lenses[hid].hidden = !lenses[hid].hidden; }
     else if (act === "time") {
@@ -767,6 +817,6 @@
   if (test.live) { loadLive(); }
   render();
   setInterval(function () {
-    if (test.minutes === null && !ui.sheet && !ui.menu && ui.screen === "today" && !ui.drawer) { render(); }
+    if (test.minutes === null && !ui.sheet && !ui.menu && (ui.screen === "today" || ui.screen === "stats") && !ui.drawer) { render(); }
   }, 30000);
 })();
