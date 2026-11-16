@@ -43,7 +43,7 @@
   }
 
   // Which node is current for this cursor and time. Pure: it never changes the cursor, so a test
-  // clock can move forward and back. Only picks and rerolls move the cursor. The app does no
+  // clock can move forward and back. Only picks and Back move the cursor. The app does no
   // planning: when a node's window has ended it follows the node's `expired` child.
   function advance(bundle, cursor, nowMin, ensure) {
     var id = cursor.node && bundle.nodes[cursor.node] ? cursor.node : bundle.root;

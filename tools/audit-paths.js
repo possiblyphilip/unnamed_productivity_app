@@ -22,8 +22,8 @@ while (queue.length) {
     if (!seen[key]) {
       seen[key] = true;
       const next = b.nodes[n.children["picked:" + c]];
-      const more = next.reroll ? "   (more: " + b.nodes[next.children.reroll].cards.map(text).join(" | ") + ")" : "";
-      console.log(n.type.padEnd(13) + text(c).padEnd(40) + "->  " + (next.cards.map(text).join(" | ") || "(" + next.quiet + ")") + more);
+      const more = next.show < next.cards.length ? "   (below: " + next.cards.slice(next.show).map(text).join(" | ") + ")" : "";
+      console.log(n.type.padEnd(13) + text(c).padEnd(40) + "->  " + (next.cards.slice(0, next.show).map(text).join(" | ") || "(" + next.quiet + ")") + more);
     }
   });
   Object.keys(n.children).forEach(function (k) { if (n.children[k]) { queue.push(n.children[k]); } });

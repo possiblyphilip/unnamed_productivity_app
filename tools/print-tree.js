@@ -18,7 +18,7 @@ console.log("energy: " + energy + "\n");
 function show(id, level, via) {
   const n = b.nodes[id];
   const pad = "  ".repeat(level);
-  console.log(pad + (via ? "[" + via + "] " : "") + n.title + " " + n.window.join("-") + ":  " + (n.cards.map(label).join("  |  ") || "(" + n.quiet + ")") + (n.reroll ? "   (reroll: " + b.nodes[n.children.reroll].cards.map(label).join("  |  ") + ")" : ""));
+  console.log(pad + (via ? "[" + via + "] " : "") + n.title + " " + n.window.join("-") + ":  " + (n.cards.slice(0, n.show).map(label).join("  |  ") || "(" + n.quiet + ")") + (n.show < n.cards.length ? "   (below: " + n.cards.slice(n.show).map(label).join("  |  ") + ")" : ""));
   if (level >= depth) { return; }
   n.cards.forEach(function (c) { show(n.children["picked:" + c], level + 1, label(c)); });
 }

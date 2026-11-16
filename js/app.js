@@ -44,6 +44,24 @@
   var notes = load("cc.notes", []);
   var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true, auto: true }, load("cc.test", {}));
   test.sleep = snapSleep(test.sleep);
+  // Colour palettes. Each is a set of roles in css/app.css, picked from the menu and kept on this device.
+  var PALETTES = [
+    { id: "sand", name: "Sand and sage", note: "Richer sand, green as the accent", c: ["#E3D5BA", "#FAF6EC", "#6F8F78"] },
+    { id: "sage", name: "Sage", note: "The first prototype", c: ["#667F70", "#f7f4f0", "#9DB8A6"] },
+    { id: "robin", name: "Robin's egg", note: "Pastel blue-green and teal", c: ["#CFE6E4", "#FBF8F1", "#3E9A9C"] },
+    { id: "eggshell", name: "Eggshell and teal", note: "Light, with teal", c: ["#F4EEE1", "#FFFDF8", "#2A8C86"] },
+    { id: "brown", name: "Soft brown", note: "Warm and low-key", c: ["#7A6354", "#F6EFE6", "#C9A27E"] },
+    { id: "lively", name: "Lively", note: "Sunny, for comparison", c: ["#F4C95D", "#FFF9EA", "#E4572E"] }
+  ];
+  function paletteById(id) { return PALETTES.filter(function (q) { return q.id === id; })[0] || PALETTES[0]; }
+  var palette = paletteById(load("cc.palette", "sand")).id;
+  function applyPalette() {
+    document.documentElement.setAttribute("data-palette", palette);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) { meta.setAttribute("content", paletteById(palette).c[0]); }
+  }
+  applyPalette();
+
   var ui = { diag: null, sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null };
   var holdTimer = null;
   var exitTimer = null;
@@ -126,18 +144,32 @@
 
   function isActive(card) { return !!(card.signal && card.signal.energy > 0); }
 
+  // Every card on the node. The first `show` are on screen; the rest wait below and fade in when the
+  // cards are pushed up. The learned order only reorders within each group.
   function cardsFor(x) {
     var cards = x.view.cards.slice();
     if (!cards.length) { return [quietCard(x)]; }
     var p = Learner.tilt(history(), x.slice, x.states);
     if (p === null) { return cards; }
     var activeFirst = p >= 0.5;
-    return cards.map(function (c, i) { return { c: c, i: i }; }).sort(function (a, b) {
-      var aa = isActive(a.c) ? 1 : 0, bb = isActive(b.c) ? 1 : 0;
-      if (aa !== bb) { return activeFirst ? bb - aa : aa - bb; }
-      return a.i - b.i;
-    }).map(function (o) { return o.c; });
+    var show = x.view.node.show || cards.length;
+    function order(list) {
+      return list.map(function (c, i) { return { c: c, i: i }; }).sort(function (a, b) {
+        var aa = isActive(a.c) ? 1 : 0, bb = isActive(b.c) ? 1 : 0;
+        if (aa !== bb) { return activeFirst ? bb - aa : aa - bb; }
+        return a.i - b.i;
+      }).map(function (o) { return o.c; });
+    }
+    return order(cards.slice(0, show)).concat(order(cards.slice(show)));
   }
+
+  // What is on screen: the cards on show, plus the ones below once they have been pushed up into view.
+  function shownCards(x) {
+    var all = cardsFor(x), node = x.view.node;
+    if (!node || !node.show || ui.revealFor === x.view.id) { return all; }
+    return all.slice(0, node.show);
+  }
+  function hasMore(x) { var n = x.view.node; return !!(n && n.show && n.cards.length > n.show && ui.revealFor !== x.view.id); }
 
   function operational(x) {
     var out = [], m = x.m, c = x.c, next = x.live.next;
@@ -209,7 +241,7 @@
         title = a.label;
         sub = (a.steps ? a.steps.join(", ") + ". " : "") + "Until " + Model.clock(a.until) + ".";
       }
-      else if (a) { sub = "Last: " + a.label + "."; }
+      else if (a) { sub = "Last selection: " + a.label + "."; }
       else { sub = v.id === bundle.root ? "Start of day." : ""; }
     }
     return '<header class="top"><div class="row">' + hamburger() + '<h1' + (ui.titleNew ? ' class="new"' : '') + '>' + esc(title) + '</h1>' +
@@ -220,13 +252,22 @@
   // While cards leave and the next set is on its way, the box keeps its height so nothing jumps.
   function boxStyle() { return ui.boxHeight ? ' style="min-height:' + ui.boxHeight + 'px"' : ""; }
 
+  // A greeting above the first choices of a block. Not inside a category, and not while the cards are away.
+  function greetingHtml(x) {
+    var node = x.view.node;
+    if (!node || node.children.back || node.type === "during_event" || !node.cards.length) { return ""; }
+    var h = Math.floor(x.m / 60);
+    var word = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 22 ? "Good evening" : "Hello";
+    return '<h2 class="greeting">' + word + "</h2>";
+  }
+
   function midHtml(x, cards) {
     var v = x.view;
     if (S.dayMode) { return '<div class="card still">Nothing needed today.</div><div><button class="pill" data-act="enddaymode">End day mode</button></div>'; }
     if (!v.node) { return '<div class="card still">Nothing needed.</div>'; }
     if (ui.exiting) {
       var ex = ui.exiting;
-      return '<div class="stack"' + boxStyle() + '>' + ex.cards.map(function (c) {
+      return greetingHtml(x) + '<div class="stack"' + boxStyle() + '>' + ex.cards.map(function (c) {
         var cls = "card ghost", style = "";
         if (ex.pickedId === c.id) {
           cls += ex.how === "swipe" ? " slide-right" : " keep";
@@ -236,12 +277,29 @@
         return '<div class="' + cls + '"' + style + '>' + esc(c.text) + "</div>";
       }).join("") + "</div>";
     }
-    if (ui.hold) { return '<div class="stack empty"' + boxStyle() + "></div>"; }
-    return '<div class="stack' + (ui.enterOnce ? " enter" : "") + '">' + cards.map(function (c) {
+    if (ui.hold) { return greetingHtml(x) + '<div class="stack empty"' + boxStyle() + "></div>"; }
+    var shownN = v.node.show || cards.length, fresh = ui.revealAnim && ui.revealFor === v.id;
+    return greetingHtml(x) + '<div class="stack' + (ui.enterOnce ? " enter" : "") + '">' + cards.map(function (c, i) {
       if (c.tags && c.tags.kind === "quiet") { return '<div class="card still">' + esc(c.text) + "</div>"; }
       var away = ui.reject && ui.reject.id === c.id ? " away" : "";
-      return '<button class="card' + away + '" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
-    }).join("") + "</div>";
+      return '<button class="card' + away + (fresh && i >= shownN ? " fresh" : "") + '" data-act="pick" data-id="' + esc(c.id) + '">' + esc(c.text) + "</button>";
+    }).join("") + "</div>" + navHtml(x);
+  }
+
+  // Under the cards: Back, inside a category.
+  function navHtml(x) {
+    var back = x.view.node.children.back;
+    return back ? '<div class="nav"><button type="button" class="back" data-act="nav" data-to="back">Back</button></div>' : "";
+  }
+
+  // Pushing the cards up (swipe up, scroll, arrow down) brings in the rest. They stay until the screen changes.
+  function reveal() {
+    if (ui.hold || ui.exiting || ui.sheet || ui.screen !== "today") { return; }
+    var x = compute();
+    if (!hasMore(x)) { return; }
+    ui.revealFor = x.view.id; ui.revealAnim = true;
+    render();
+    ui.revealAnim = false;
   }
 
   function bottomHtml(x) {
@@ -267,6 +325,12 @@
             '<div class="actions"><button class="pill" data-act="rejectsend">Send</button><span class="count" id="count">' + ui.draft.length + " / 1000</span></div>"
           : '<p class="ask">Can you tell me more about that, or are you just not feeling it?</p>' +
             '<button class="row-btn" data-act="rejectmore">I can tell you more</button><button class="row-btn" data-act="rejectquiet">Just not feeling it</button>');
+    } else if (ui.sheet === "palette") {
+      body = "<h2>Colors</h2>" + PALETTES.map(function (q) {
+        return '<button type="button" class="row-btn" data-act="palette" data-id="' + q.id + '" aria-pressed="' + (q.id === palette ? "true" : "false") + '">' +
+          '<span class="swatch-row"><span class="swatch" aria-hidden="true">' + q.c.map(function (c) { return '<i style="background:' + c + '"></i>'; }).join("") + "</span>" +
+          "<span>" + esc(q.name) + "<small>" + esc(q.note) + "</small></span></span></button>";
+      }).join("");
     } else {
       body = "<h2>Today is off-plan</h2>" + DAY_MODES.map(function (d) {
         return '<button class="row-btn" data-act="daymode" data-mode="' + d[0] + '">' + d[1] + "</button>";
@@ -308,6 +372,7 @@
     return '<button type="button" class="scrim" data-act="navmenu" aria-label="Close menu"></button>' +
       '<nav class="menu" aria-label="Menu"><button type="button" class="hamburger" data-act="navmenu" aria-label="Close menu"><span></span><span></span><span></span></button>' +
       '<p class="horizon">Unconscious</p>' + item("today", "Today") + item("integrations", "Integrations") + item("install", "Install help") +
+      '<button type="button" class="item" data-act="palettesheet">Colors</button>' +
       '<button type="button" class="item" data-act="notesheet">Tell it something</button>' +
       '<button type="button" class="item" data-act="daysheet">Off-plan today</button>' +
       (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
@@ -416,7 +481,7 @@
       html = installHtml();
     } else {
       var x = compute();
-      var cards = cardsFor(x);
+      var cards = shownCards(x);
       html = topHtml(x) + '<section class="mid">' + midHtml(x, cards) + "</section>" + bottomHtml(x) + sheetHtml(x) + testHtml();
       x.shown = cards;
       current = x;
@@ -446,8 +511,8 @@
 
   function pick(id, how, dx) {
     var x = compute();
-    var cards = cardsFor(x);
-    var card = cards.filter(function (c) { return c.id === id; })[0];
+    var cards = shownCards(x);
+    var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
     if (!card || !x.view.node) { return; }
     offers.push({
       t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states),
@@ -456,19 +521,22 @@
     });
     if (offers.length > 3000) { offers = offers.slice(offers.length - 3000); }
     var child = Model.childFor(x.view.node, card);
-    S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
-    if (test.auto) { S.advance = 30; }
+    // Opening a category is only navigation: it is not an activity and it does not move the day on.
+    if (!card.opens) {
+      S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
+      if (test.auto) { S.advance = 30; }
+    }
     S.cursor = { node: child || x.view.id, setAt: x.m };
     saveAll();
     var box = document.querySelector(".mid .stack");
     ui.boxHeight = box ? box.offsetHeight : 0;
     how = how || "tap";
     ui.exiting = { cards: cards.filter(function (c) { return !(c.tags && c.tags.kind === "quiet"); }), pickedId: card.id, how: how, dx: dx || 0 };
-    ui.titleNew = true;
+    ui.titleNew = !card.opens;
     clearTimeout(holdTimer);
     clearTimeout(exitTimer);
-    ui.hold = !!test.pause;
-    exitTimer = setTimeout(function () { ui.exiting = null; if (!ui.hold) { applyAdvance(); ui.enterOnce = true; } render(); }, how === "swipe" ? 450 : 900);
+    ui.hold = !!test.pause && !card.opens;
+    exitTimer = setTimeout(function () { ui.exiting = null; if (!ui.hold) { applyAdvance(); ui.enterOnce = true; } render(); }, card.opens ? 350 : how === "swipe" ? 450 : 900);
     if (ui.hold) { holdTimer = setTimeout(function () { ui.hold = false; applyAdvance(); ui.enterOnce = true; render(); }, 3000); }
     render();
   }
@@ -480,6 +548,18 @@
     S.skew = (S.skew || 0) + S.advance;
     delete S.advance;
     saveAll();
+  }
+
+  // "More options" and "Back" only move the cursor to another node the planner already made.
+  function goTo(which) {
+    if (ui.hold || ui.exiting || ui.sheet) { return; }
+    var x = compute();
+    var to = x.view.node && x.view.node.children[which];
+    if (!to) { return; }
+    S.cursor = { node: to, setAt: x.m };
+    saveAll();
+    ui.enterOnce = true;
+    render();
   }
 
   // Swipe left: a kind question first. "Not feeling it" or a few words, then the planner answers with a
@@ -496,9 +576,9 @@
 
   function doReject(reason, text) {
     var x = compute();
-    var cards = cardsFor(x);
+    var cards = shownCards(x);
     var r = ui.reject;
-    var card = r && cards.filter(function (c) { return c.id === r.id; })[0];
+    var card = r && cardsFor(x).filter(function (c) { return c.id === r.id; })[0];
     if (!card || !x.view.node) { ui.sheet = null; ui.reject = null; render(); return; }
     offers.push({
       t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states),
@@ -554,7 +634,18 @@
   }
   app.addEventListener("pointerup", function (e) { endDrag(e, false); });
   app.addEventListener("pointercancel", function (e) { endDrag(e, true); });
+  var touchY = null;
+  app.addEventListener("touchstart", function (e) { touchY = e.touches.length === 1 && e.target.closest(".mid") ? e.touches[0].clientY : null; }, { passive: true });
+  app.addEventListener("touchend", function (e) {
+    if (touchY === null) { return; }
+    var dy = e.changedTouches[0].clientY - touchY;
+    touchY = null;
+    if (dy < -40) { reveal(); }
+  }, { passive: true });
+  app.addEventListener("wheel", function (e) { if (e.deltaY > 8 && e.target.closest(".mid")) { reveal(); } }, { passive: true });
+
   app.addEventListener("keydown", function (e) {
+    if ((e.key === "ArrowDown" || e.key === "PageDown") && cardEl(e)) { reveal(); }
     var el = cardEl(e);
     if (!el || ui.hold || ui.exiting || ui.sheet) { return; }
     if (e.key === "ArrowRight") { e.preventDefault(); pick(el.getAttribute("data-id"), "swipe", 0); }
@@ -580,11 +671,15 @@
     if (!el || el.disabled) { return; }
     var act = el.getAttribute("data-act");
     if (act === "pick") { pick(el.getAttribute("data-id"), "tap"); return; }
+    if (act === "nav") { goTo(el.getAttribute("data-to")); return; }
+    if (act === "reveal") { reveal(); return; }
     if (act === "rejectmore") { if (ui.reject) { ui.reject.step = "more"; render(); } return; }
     if (act === "rejectquiet") { doReject("not_feeling_it", ""); return; }
     if (act === "rejectsend") { var why = ui.draft.trim(); if (why) { doReject("more", why); } return; }
     if (act === "closesheet") { ui.sheet = null; ui.noteSent = false; ui.reject = null; }
     else if (act === "notesheet") { ui.sheet = "note"; ui.noteSent = false; ui.menu = false; ui.screen = "today"; }
+    else if (act === "palettesheet") { ui.sheet = "palette"; ui.menu = false; ui.screen = "today"; }
+    else if (act === "palette") { palette = paletteById(el.getAttribute("data-id")).id; save("cc.palette", palette); applyPalette(); }
     else if (act === "daysheet") { ui.sheet = "day"; ui.menu = false; ui.screen = "today"; }
     else if (act === "daymode") {
       var mode = el.getAttribute("data-mode");

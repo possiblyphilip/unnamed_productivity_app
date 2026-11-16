@@ -23,13 +23,14 @@ function checkTree(label, bundle) {
     const where = label + " node " + id;
     if (!n.title) { bad(where + ": missing title"); }
     if (mins(n.window[1]) <= mins(n.window[0])) { bad(where + ": window ends before it starts"); }
-    if (n.cards.length > 4) { bad(where + ": more than 4 cards"); }
+    if (n.show > 4) { bad(where + ": more than 4 cards on show"); }
+    if (n.cards.length > 8) { bad(where + ": more than 8 cards in all"); }
+    if (n.cards.length && (!n.show || n.show > n.cards.length)) { bad(where + ": bad show count"); }
     if (!n.cards.length && !n.quiet) { bad(where + ": no cards and no quiet text"); }
     if (!("expired" in n.children)) { bad(where + ": missing 'expired' child"); }
-    if (n.reroll && !n.children.reroll) { bad(where + ": reroll on but no reroll child"); }
-    if (!n.reroll && n.children.reroll) { bad(where + ": reroll child but reroll off"); }
-    const real = n.cards.filter(function (x) { return !OPT[x].filler; }).length;
-    const fillers = n.cards.length - real;
+    const onShow = n.cards.slice(0, n.show);
+    const real = onShow.filter(function (x) { return !OPT[x].filler; }).length;
+    const fillers = onShow.length - real;
     if (fillers > 0 && real >= (n.type === "during_event" ? 1 : 2)) { bad(where + ": fillers crowd a screen that has " + real + " real options"); }
     let flirty = 0;
     n.cards.forEach(function (cid) {
@@ -84,12 +85,11 @@ function after(bundle, picks, now) {
   picks.forEach(function (p) {
     const n = bundle.nodes[id];
     let next = n.children["picked:" + p];
-    if (!next && n.reroll) { next = bundle.nodes[n.children.reroll].children["picked:" + p]; }
     if (!next) { bad("cannot pick " + p + " at " + id); return; }
     id = next;
   });
   const v = Model.advance(bundle, { node: id }, mins(now));
-  return { title: v.node ? v.node.title : null, cards: v.cards.map(function (c) { return c.id; }), node: v.node };
+  return { title: v.node ? v.node.title : null, cards: v.cards.map(function (c) { return c.id; }).slice(0, v.node ? v.node.show : 0), all: v.cards.map(function (c) { return c.id; }), node: v.node };
 }
 
 const normal = Planner.plan(Sample.context, { energy: "normal" });
@@ -111,8 +111,7 @@ checkTree("sleep 9", sleep9);
 function screen(bundle, picks, now) {
   const r = after(bundle, picks, now);
   const n = r.node;
-  const more = n && n.reroll && bundle.nodes[n.children.reroll] ? bundle.nodes[n.children.reroll].cards : [];
-  return { title: r.title, cards: r.cards, offered: r.cards.concat(more), node: n };
+  return { title: r.title, cards: r.cards, offered: r.all, node: n };
 }
 
 function expect(name, r, rule) {
@@ -130,32 +129,84 @@ function expect(name, r, rule) {
   console.log((ok ? "ok   " : "FAIL ") + name + "  ->  " + (r.cards.join(", ") || "(quiet)"));
 }
 
-expect("08:10 first screen", screen(normal, [], "08:10"), { has: ["coffee_window", "shower"], lacks: ["perfume", "market_flowers", "write_25"], count: [2, 4] });
-expect("after shower: dressing comes next, not perfume", screen(normal, ["shower"], "08:10"), { has: ["get_dressed"], lacks: ["perfume", "market_flowers"] });
-expect("after shower and dressing: the market is on offer", screen(normal, ["shower", "get_dressed"], "08:10"), { offers: ["market_flowers"] });
-expect("after the market walk: coffee and eggs are gone, a croissant is next", screen(normal, ["shower", "get_dressed", "market_flowers"], "08:10"), { has: ["croissant"], lacks: ["coffee_window", "eat_first", "walk_block"] });
-expect("after the croissant: writing opens up", screen(normal, ["shower", "get_dressed", "market_flowers", "croissant"], "08:10"), { lacks: ["croissant", "coffee_window", "eat_first"], any: [["write_25", "putoff_ten", "two_emails", "flowers_water"]] });
+
+// ---- the shape of the tree: broad first, then narrower ----
+// a card that sits under a category is only ever shown inside it, and the heading says where you are
 (function () {
-  const n = normal.nodes[normal.nodes[normal.root].children["picked:coffee_window"]];
-  const r = { cards: normal.nodes[n.children.reroll].cards, node: n };
-  const overlap = r.cards.filter(function (id) { return n.cards.indexOf(id) !== -1; });
-  if (overlap.length) { bad("reroll repeats " + overlap.join(",")); }
-  console.log((overlap.length ? "FAIL " : "ok   ") + "reroll after coffee shows different cards  ->  " + r.cards.join(", "));
+  const wrong = [];
+  [normal, low, noEvents, sleep5, sleep9].forEach(function (b) {
+    Object.keys(b.nodes).forEach(function (id) {
+      const n = b.nodes[id];
+      const inside = n.facts.filter(function (f) { return f.indexOf("in_") === 0; });
+      n.cards.forEach(function (c) {
+        const o = OPT[c];
+        if (!o.under && inside.length) { wrong.push(c + " shown inside " + inside.join(",")); }
+        if (o.under && inside.indexOf("in_" + o.under) === -1) { wrong.push(c + " shown outside " + o.under); }
+      });
+      if (inside.length && n.title.indexOf(" · ") === -1 && inside.length > 1) { wrong.push("title does not show the path: " + n.title); }
+    });
+  });
+  wrong.slice(0, 5).forEach(function (m) { bad("tree shape: " + m); });
+  console.log((wrong.length ? "FAIL " : "ok   ") + "narrow cards only appear inside their category, broad ones only on the first screen");
 })();
-expect("11:40 before the appointment", screen(normal, [], "11:40"), { title: "Before 12:30", any: [["getting_ready", "bag_keys", "eat_before_out"]] });
+
+// Kyra's rules for the copy: nothing over-specific on a first screen, nothing obvious, no praise
 (function () {
-  const n = normal.nodes[Model.advance(normal, { node: normal.root }, mins("11:40")).id];
-  const r = { title: n.title, cards: normal.nodes[n.children["picked:getting_ready"]].cards, node: normal.nodes[n.children["picked:getting_ready"]] };
-  r.offered = r.cards.concat(r.node.reroll ? normal.nodes[r.node.children.reroll].cards : []);
-  expect("after getting ready, leaving early is on offer", r, { offers: ["leave_early"], lacks: ["getting_ready"] });
+  const problems2 = [];
+  const specific = /window|flowers|croissant|perfume|keys|bag\b|dressed|get dressed|eggs|toast|sketch for|market/i;
+  Planner.OPTIONS.forEach(function (o) {
+    if (specific.test(o.text)) { problems2.push("too specific or obvious: " + o.text); }
+    if (!o.under && !o.opens && !o.filler && o.text.split(/\s+/).length > 6) { problems2.push("long first-screen card: " + o.text); }
+    if (!o.under && o.text.split(/\s+/).length > 6 && o.opens) { problems2.push("long category: " + o.text); }
+  });
+  problems2.forEach(function (m) { bad("copy: " + m); });
+  console.log((problems2.length ? "FAIL " : "ok   ") + "copy is broad, short and plain (nothing like 'coffee by the window' or 'get dressed')");
 })();
-expect("12:40 during the appointment: one card, leave when it is time", screen(normal, [], "12:40"), { title: "Appointment", count: [1, 1], has: ["leave_now"] });
-expect("14:10 dry afternoon offers the park", screen(normal, [], "14:10"), { title: "Afternoon", offers: ["park_walk"] });
-expect("14:10 with rain all day: no park walk", screen(allRain, [], "14:10"), { lacks: ["park_walk"] });
-expect("14:10 low energy starts with lying down", screen(low, [], "14:10"), { first: "lie_down_20" });
-expect("20:30 night is never empty: a bedtime routine", screen(normal, [], "20:30"), { title: "Tonight", count: [2, 4], any: [["phone_charge", "wash_face"]] });
+
+expect("08:10 first screen is broad categories", screen(normal, [], "08:10"), { has: ["c_routine", "c_move"], lacks: ["shower", "m_stretch", "st_full"], count: [3, 4] });
+(function () {
+  const r = screen(normal, [], "08:10");
+  const ok = r.offered.length > r.cards.length;
+  if (!ok) { bad("nothing waits below the first screen"); }
+  console.log((ok ? "ok   " : "FAIL ") + "more cards wait below the first screen  ->  " + r.offered.slice(r.cards.length).join(", "));
+})();
+expect("Movement opens movement choices", screen(normal, ["c_move"], "08:10"), { title: "Movement", has: ["m_stretch", "m_yoga"], lacks: ["c_routine", "c_move", "st_full"] });
+expect("Stretching opens stretching choices, not the generic label", screen(normal, ["c_move", "m_stretch"], "08:10"), { title: "Movement · Stretching", has: ["st_full", "st_hips"], lacks: ["m_stretch", "m_yoga"] });
+expect("after a stretch the day goes back to broad choices", screen(normal, ["c_move", "m_stretch", "st_hips"], "08:10"), { has: ["c_routine"], lacks: ["c_move", "st_full", "m_yoga"] });
+expect("Back from stretching returns to movement", (function () {
+  let id = Model.advance(normal, { node: normal.root }, mins("08:10")).id;
+  ["c_move", "m_stretch"].forEach(function (p) { id = normal.nodes[id].children["picked:" + p]; });
+  const back = normal.nodes[id].children.back;
+  return { title: normal.nodes[back].title, cards: normal.nodes[back].cards.slice(0, normal.nodes[back].show), offered: normal.nodes[back].cards, node: normal.nodes[back] };
+})(), { title: "Movement", has: ["m_stretch"] });
+expect("Back from movement returns to the first screen with Movement still on offer", (function () {
+  let id = Model.advance(normal, { node: normal.root }, mins("08:10")).id;
+  id = normal.nodes[id].children["picked:c_move"];
+  const back = normal.nodes[id].children.back;
+  return { title: normal.nodes[back].title, cards: normal.nodes[back].cards.slice(0, normal.nodes[back].show), offered: normal.nodes[back].cards, node: normal.nodes[back] };
+})(), { title: "Morning", has: ["c_move"] });
+expect("morning routine stays open for its next step", screen(normal, ["c_routine", "shower"], "08:10"), { title: "Morning routine", has: ["skincare"], lacks: ["shower"] });
+expect("breakfast asks what kind, then returns to the routine", screen(normal, ["c_routine", "c_breakfast"], "08:10"), { title: "Morning routine · Breakfast", has: ["bf_quick", "bf_proper"] });
+expect("after breakfast the routine carries on without it", screen(normal, ["c_routine", "c_breakfast", "bf_quick"], "08:10"), { title: "Morning routine", has: ["shower"], lacks: ["c_breakfast", "bf_quick"] });
+expect("mindful practice opens practices", screen(normal, ["c_mindful"], "08:10"), { has: ["mi_breathe", "mi_meditate", "mi_grateful"] });
+expect("work opens kinds of work, deep work asks how long", screen(normal, ["c_work", "w_deep"], "08:10"), { has: ["dw_25", "dw_50"] });
+expect("errands lead to shopping, which leads to kinds of shopping", screen(normal, ["c_errands", "e_shop"], "08:10"), { offers: ["sh_groc", "sh_clothes", "sh_thrift", "sh_browse"] });
+expect("responsibilities lead to personal, which leads to taxes", screen(normal, ["c_resp", "r_personal"], "08:10"), { has: ["rp_taxes"] });
+expect("after deep work: a break", screen(normal, ["c_work", "w_deep", "dw_25"], "08:10"), { has: ["break_5"] });
+expect("after writing: read it back", screen(normal, ["c_creative", "cr_write"], "08:10"), { has: ["read_back"] });
+expect("11:40 before the appointment", screen(normal, [], "11:40"), { title: "Before 12:30", has: ["getting_ready"], offers: ["c_eat", "c_relax"] });
+expect("after getting ready, heading out early comes first", screen(normal, ["getting_ready"], "11:40"), { first: "leave_early" });
+expect("12:40 during the appointment: one card, head there when it is time", screen(normal, [], "12:40"), { title: "Appointment", count: [1, 1], has: ["leave_now"] });
+expect("14:10 afternoon opens with broad choices and More options", screen(normal, [], "14:10"), { title: "Afternoon", has: ["c_work"], offers: ["c_eat", "c_move"], lacks: ["m_walk", "cr_write"] });
+expect("14:10 a walk is on offer once you open Movement in daylight", screen(normal, ["c_move"], "14:10"), { offers: ["m_walk"] });
+expect("14:10 low energy starts with relaxing, and lying down is in it", screen(low, [], "14:10"), { first: "c_relax" });
+expect("14:10 low energy: relaxing offers lying down first", screen(low, ["c_relax"], "14:10"), { first: "rx_lie" });
+expect("20:30 night is never empty: wind down, bed, tomorrow", screen(normal, [], "20:30"), { title: "Tonight", count: [2, 4], has: ["c_winddown", "bed_ready"] });
 expect("no appointment: 11:40 is still morning", screen(noEvents, [], "11:40"), { title: "Morning" });
-expect("evening starts with dinner", screen(normal, [], "18:00"), { any: [["chicken_bowl", "soup_bread", "new_recipe"]], title: "Evening" });
+expect("evening starts with eating", screen(normal, [], "18:00"), { first: "c_eat", title: "Evening" });
+expect("eating opens quick, leftovers, cooking", screen(normal, ["c_eat"], "18:00"), { has: ["ea_quick", "ea_left", "ea_cook"] });
+expect("cooking leads to simple or something new, which leads to recipes", screen(normal, ["c_eat", "ea_cook", "ck_new"], "18:00"), { title: "Eating · Cooking · Cooking something new", any: [["rc_risotto"]], lacks: ["ea_quick", "ck_simple"] });
+expect("after cooking, dinner is done and the evening carries on", screen(normal, ["c_eat", "ea_cook", "ck_simple"], "18:00"), { lacks: ["c_eat", "ea_quick", "ck_simple"], offers: ["c_relax"] });
 
 // low energy never offers a demanding option anywhere
 (function () {
@@ -165,23 +216,18 @@ expect("evening starts with dinner", screen(normal, [], "18:00"), { any: [["chic
   console.log((hits.length ? "FAIL " : "ok   ") + "low energy never offers a demanding option");
 })();
 
-// what each pick leads to
+// no screen is ever a dead end: a category with nothing in it is never offered
 (function () {
-  const evening = normal.nodes[Model.advance(normal, { node: normal.root }, mins("18:00")).id];
-  const cooking = normal.nodes[evening.children["picked:new_recipe"]];
-  expect("cooking something new leads to recipes, and only recipes", { cards: cooking.cards, offered: cooking.cards.concat(cooking.reroll ? normal.nodes[cooking.children.reroll].cards : []), node: cooking }, { lacks: ["chicken_bowl", "soup_bread", "clear_up", "evening_text"], count: [2, 4], any: [["recipe_risotto"]] });
-  const recipeOnly = cooking.cards.every(function (x) { return x.indexOf("recipe_") === 0; });
-  if (!recipeOnly) { bad("the screen after 'cook something new' is not all recipes: " + cooking.cards.join(",")); }
-  const cooked = normal.nodes[cooking.children["picked:recipe_curry"]];
-  expect("after picking a recipe, dinner is done and the evening carries on", { cards: cooked.cards, offered: cooked.cards.concat(cooked.reroll ? normal.nodes[cooked.children.reroll].cards : []), node: cooked }, { lacks: ["new_recipe", "chicken_bowl", "soup_bread", "recipe_risotto"], any: [["clear_up", "evening_text", "walk_after"]] });
+  const dead = [];
+  [normal, low, sleep5, sleep9, noEvents].forEach(function (b) {
+    Object.keys(b.nodes).forEach(function (id) {
+      const n = b.nodes[id];
+      if (!n.cards.length && n.type !== "night" && n.facts.some(function (f) { return f.indexOf("in_") === 0; })) { dead.push(id); }
+    });
+  });
+  if (dead.length) { bad("empty screens inside a category: " + dead.slice(0, 3).join(" | ")); }
+  console.log((dead.length ? "FAIL " : "ok   ") + "no category opens onto an empty screen");
 })();
-expect("after writing: read it back or take a break", screen(normal, ["coffee_window", "write_25"], "08:10"), { has: ["read_back"] });
-expect("after the park walk: sit down for a bit", screen(normal, ["park_walk"], "14:10"), { has: ["park_sit"] });
-expect("after sketching: pin it up", screen(normal, ["sketch_15"], "14:10"), { offers: ["pin_sketch"] });
-expect("after a bath: get comfortable", screen(normal, ["chicken_bowl", "clear_up", "evening_text", "bath"], "18:00"), { offers: ["comfy_clothes"] });
-expect("after leaving for the appointment: phone on silent", screen(normal, ["leave_now"], "12:40"), { has: ["silent_phone"] });
-expect("after the phone is on silent there is still something", screen(normal, ["leave_now", "silent_phone"], "12:40"), { count: [1, 1] });
-expect("after getting ready: leave early comes first", screen(normal, ["getting_ready"], "11:40"), { first: "leave_early" });
 
 // "not feeling it": a new set without the option, for the rest of the day
 (function () {
@@ -192,29 +238,28 @@ expect("after getting ready: leave early comes first", screen(normal, ["getting_
   const ids = function (v) { return v.cards.map(function (x) { return x.id; }); };
   function row(name, ok, detail) { if (!ok) { bad("reject: " + name + " (" + detail + ")"); } console.log((ok ? "ok   " : "FAIL ") + "reject: " + name + "  ->  " + detail); }
 
-  let v = show(sess.reject(at("08:10"), "shower"), "08:10");
-  row("no shower: it is gone but getting dressed is not locked", ids(v).indexOf("shower") === -1 && ids(v).indexOf("get_dressed") !== -1, ids(v).join(","));
-  v = show(sess.reject(at("08:10"), "coffee_window"), "08:10");
-  row("no coffee: it is gone and the screen is still full", ids(v).indexOf("coffee_window") === -1 && ids(v).length >= 2, ids(v).join(","));
-  const mid = b.nodes[at("08:10")].children["picked:coffee_window"];
-  v = show(sess.reject(mid, "write_25"), "14:10");
-  row("no writing in the morning: still out in the afternoon", ids(v).indexOf("write_25") === -1 && !b.nodes[v.id].reroll || ids(show(b.nodes[v.id].children.reroll, "14:10")).indexOf("write_25") === -1, ids(v).join(","));
-  const evening = at("18:00");
-  v = show(sess.reject(evening, "new_recipe"), "18:00");
-  row("no new recipe: no recipes, dinner is still on offer", ids(v).indexOf("new_recipe") === -1 && ids(v).every(function (x) { return x.indexOf("recipe_") !== 0; }) && (ids(v).indexOf("chicken_bowl") !== -1 || ids(v).indexOf("soup_bread") !== -1), ids(v).join(","));
-  let night = at("20:30");
-  night = sess.reject(night, "wash_face");
+  let v = show(sess.reject(at("08:10"), "c_move"), "08:10");
+  row("no movement: it is gone and the screen is still full", ids(v).indexOf("c_move") === -1 && ids(v).length >= 3, ids(v).join(","));
+  const routine = b.nodes[at("08:10")].children["picked:c_routine"];
+  v = show(sess.reject(routine, "shower"), "08:10");
+  row("no shower: the rest of the routine is still there", ids(v).indexOf("shower") === -1 && ids(v).indexOf("skincare") !== -1 && v.node.title === "Morning routine", ids(v).join(","));
+  const stretch = b.nodes[b.nodes[at("08:10")].children["picked:c_move"]].children["picked:m_stretch"];
+  let w = stretch;
+  ["st_full", "st_hips", "st_neck", "st_back"].forEach(function (o) { w = sess.reject(w, o); });
+  v = show(w, "08:10");
+  row("turning down every stretch closes the category", ids(v).length > 0 && ids(v).indexOf("m_stretch") === -1, v.node.title + ": " + ids(v).join(","));
+  let night = sess.reject(at("20:30"), "bed_ready");
   const seen = {};
   let id = night;
-  for (let i = 0; i < 6; i++) { const w = show(id, "20:30"); w.cards.forEach(function (x) { seen[x.id] = true; }); if (!w.cards.length) { break; } id = w.node.children["picked:" + w.cards[0].id]; }
-  row("no bedtime wash: reading in bed and lights out are still reachable", seen.read_bed || seen.lights_out, Object.keys(seen).join(","));
+  for (let i = 0; i < 6; i++) { const x = show(id, "20:30"); x.cards.forEach(function (c) { seen[c.id] = true; }); if (!x.cards.length) { break; } id = x.node.children["picked:" + x.cards[0].id]; }
+  row("no bedtime routine: lights out is still reachable", seen.lights_out, Object.keys(seen).join(","));
 })();
 
 // the day never runs dry: from every part of the day, picking the first card keeps giving something
 (function () {
   const sess = Planner.session(Sample.context, { energy: "normal" });
   const b = sess.bundle;
-  const times = [["morning", "08:10", 8], ["before the appointment", "11:40", 4], ["the appointment", "12:40", 5], ["afternoon", "14:10", 8], ["evening", "18:00", 8], ["night", "20:30", 4]];
+  const times = [["morning", "08:10", 8], ["before the appointment", "11:40", 4], ["the appointment", "12:40", 2], ["afternoon", "14:10", 8], ["evening", "18:00", 8], ["night", "20:30", 3]];
   times.forEach(function (t) {
     let id = Model.advance(b, { node: b.root }, mins(t[1]), sess.ensure).id, steps = 0;
     for (let i = 0; i < 40; i++) {
@@ -229,7 +274,7 @@ expect("after getting ready: leave early comes first", screen(normal, ["getting_
   });
   // the bedtime routine ends the day
   let id = Model.advance(b, { node: b.root }, mins("20:30"), sess.ensure).id;
-  ["phone_charge", "wash_face", "read_bed", "lights_out"].forEach(function (p) {
+  ["bed_ready", "lights_out"].forEach(function (p) {
     const v = Model.advance(b, { node: id }, mins("20:30"), sess.ensure);
     if (v.cards.map(function (x) { return x.id; }).indexOf(p) === -1) { bad("bedtime: " + p + " is not on offer"); return; }
     id = v.node.children["picked:" + p];
@@ -240,7 +285,7 @@ expect("after getting ready: leave early comes first", screen(normal, ["getting_
   console.log((ok ? "ok   " : "FAIL ") + "after lights out the day is done  ->  " + (last.node ? last.node.quiet : ""));
 })();
 
-// sleep: three plans, a gentler one after about 5 hours, the ordinary one at 7, more room at 9
+// sleep: a gentler plan after about 5 hours, the ordinary one at 7, more room at 9
 (function () {
   const rows = [];
   function row(name, ok, detail) { if (!ok) { bad("sleep: " + name + " (" + detail + ")"); } rows.push((ok ? "ok   " : "FAIL ") + name + "  ->  " + detail); }
@@ -248,60 +293,49 @@ expect("after getting ready: leave early comes first", screen(normal, ["getting_
   const d5 = hitsDemanding(sleep5);
   row("5 hours: nothing demanding is offered anywhere", d5.length === 0, d5.length ? d5.slice(0, 3).join(",") : "none");
   const a5 = screen(sleep5, [], "14:10").cards;
-  row("5 hours: the afternoon starts with lying down", a5[0] === "lie_down_20", a5.join(","));
-  const m9 = screen(sleep9, ["coffee_window"], "08:10");
-  row("9 hours: writing is on the first screen after coffee", m9.cards.indexOf("write_25") !== -1, m9.cards.join(","));
-  const m7 = screen(sleep7, ["coffee_window"], "08:10");
-  row("7 hours: the same morning as the default plan", JSON.stringify(m7.cards) === JSON.stringify(screen(normal, ["coffee_window"], "08:10").cards) && Object.keys(sleep7.nodes).length === Object.keys(normal.nodes).length, m7.cards.join(","));
+  row("5 hours: the afternoon starts with relaxing", a5[0] === "c_relax", a5.join(","));
+  const m9 = screen(sleep9, ["c_work", "w_deep"], "08:10");
+  row("9 hours: deep work is on offer", m9.cards.indexOf("dw_50") !== -1, m9.cards.join(","));
+  const m5 = screen(sleep5, ["c_work"], "08:10");
+  row("5 hours: work offers no deep work", m5.cards.indexOf("w_deep") === -1, m5.cards.join(","));
+  const m7 = screen(sleep7, ["c_move"], "08:10");
+  row("7 hours: the same morning as the default plan", JSON.stringify(m7.cards) === JSON.stringify(screen(normal, ["c_move"], "08:10").cards) && Object.keys(sleep7.nodes).length === Object.keys(normal.nodes).length, m7.cards.join(","));
   const same = JSON.stringify(screen(lowSleep9, [], "14:10").cards) === JSON.stringify(screen(normal, [], "14:10").cards);
   row("low energy after 9 hours of sleep is an ordinary day", same, screen(lowSleep9, [], "14:10").cards.join(","));
-  const avg = function (b) { let t = 0, k = 0; Object.keys(b.nodes).forEach(function (id) { const n = b.nodes[id].cards.length; if (n) { t += n; k++; } }); return t / k; };
-  row("more cards after a long night, fewer after a short one", avg(sleep9) > avg(normal) && avg(normal) > avg(sleep5), avg(sleep5).toFixed(2) + " < " + avg(normal).toFixed(2) + " < " + avg(sleep9).toFixed(2) + " cards a screen");
+  const avg = function (b) { let t = 0, k = 0; Object.keys(b.nodes).forEach(function (id) { const n = b.nodes[id].show; if (n) { t += n; k++; } }); return t / k; };
+  row("fewer cards a screen after a short night", avg(sleep5) < avg(normal), avg(sleep5).toFixed(2) + " < " + avg(normal).toFixed(2) + " cards a screen");
   rows.forEach(function (r) { console.log(r); });
 })();
 
-// after dinner there is plenty to choose from
+// every block opens on three or four broad cards (the appointment itself has one), with more waiting below
 (function () {
-  const evening = normal.nodes[Model.advance(normal, { node: normal.root }, mins("18:00")).id];
-  const afterDinner = normal.nodes[evening.children["picked:chicken_bowl"]];
-  const seen = {};
-  afterDinner.cards.forEach(function (x) { seen[x] = true; });
-  if (afterDinner.reroll) { normal.nodes[afterDinner.children.reroll].cards.forEach(function (x) { seen[x] = true; }); }
-  const n = Object.keys(seen).length;
-  const ok = n >= 4;
-  if (!ok) { bad("after dinner only " + n + " options are offered"); }
-  console.log((ok ? "ok   " : "FAIL ") + "after dinner " + n + " options across the screen and its reroll  ->  " + Object.keys(seen).join(", "));
+  const rows = [];
+  let id = normal.root;
+  while (id) {
+    const n = normal.nodes[id];
+    const want = n.type === "during_event" ? [1, 1] : [3, 4];
+    if (n.show < want[0] || n.show > want[1]) { bad("first screen of " + n.title + " shows " + n.show + " cards"); }
+    rows.push(n.title + " " + n.show);
+    id = n.children.expired;
+  }
+  const ok = !problems.some(function (m) { return m.indexOf("first screen of") === 0; });
+  console.log((ok ? "ok   " : "FAIL ") + "each block opens on three or four cards  ->  " + rows.join(", "));
 })();
 
-// the number of cards varies, and never exceeds four
+// the playful category turns up some days and not others
 (function () {
-  const dist = { 1: 0, 2: 0, 3: 0, 4: 0 };
-  Object.keys(normal.nodes).forEach(function (id) { const k = normal.nodes[id].cards.length; if (k) { dist[k]++; } });
-  const total = dist[1] + dist[2] + dist[3] + dist[4];
-  const ok = dist[1] > 0 && dist[2] > 0 && dist[3] > 0 && dist[4] > 0 && dist[4] / total < 0.4;
-  if (!ok) { bad("card counts are not varied enough: " + JSON.stringify(dist)); }
-  console.log((ok ? "ok   " : "FAIL ") + "card counts vary  ->  1: " + dist[1] + ", 2: " + dist[2] + ", 3: " + dist[3] + ", 4: " + dist[4]);
-})();
-
-// flirty options turn up some days and not others: each can be found within a month, and the two
-// evening ones are on offer on the sample day
-(function () {
-  const flirty = Planner.OPTIONS.filter(function (o) { return o.kind === "flirty"; });
-  const onSample = {};
-  Object.keys(normal.nodes).forEach(function (id) { normal.nodes[id].cards.forEach(function (x) { if (OPT[x].kind === "flirty") { onSample[x] = true; } }); });
-  const problems2 = [];
-  flirty.forEach(function (o) {
-    const block = Object.keys(o.at)[0];
-    let days = 0;
-    for (let d = 0; d < 30; d++) {
-      const day = "2026-11-" + String(13 + d > 30 ? 13 + d - 30 : 13 + d).padStart(2, "0") + (13 + d > 30 ? "x" : "");
-      if (Planner.hash(day + "|" + block + "|" + o.id) % 100 < Math.round(o.chance * 100)) { days++; }
-    }
-    if (!days) { problems2.push(o.id + " never appears in a month"); }
-  });
-  ["evening_text", "good_thing"].forEach(function (id) { if (!onSample[id]) { problems2.push(id + " is not on offer on the sample day"); } });
-  problems2.forEach(function (m) { bad("flirty: " + m); });
-  console.log((problems2.length ? "FAIL " : "ok   ") + "flirty options turn up some days (" + Object.keys(onSample).join(", ") + " today)");
+  const o = OPT.c_playful, problems2 = [];
+  let days = 0;
+  for (let d = 1; d <= 30; d++) {
+    const day = "2026-12-" + String(d).padStart(2, "0");
+    if (["morning", "afternoon", "evening"].some(function (blk) { return Planner.hash(day + "|" + blk + "|" + o.id) % 100 < Math.round(o.chance * 100); })) { days++; }
+  }
+  if (days < 10 || days > 30) { problems2.push("turns up on " + days + " of 30 days"); }
+  let found = false;
+  Object.keys(normal.nodes).forEach(function (id) { if (normal.nodes[id].cards.indexOf("c_playful") !== -1) { found = true; } });
+  if (!found) { problems2.push("never offered on the sample day"); }
+  problems2.forEach(function (m) { bad("playful: " + m); });
+  console.log((problems2.length ? "FAIL " : "ok   ") + "something playful turns up some days (" + days + " of 30)");
 })();
 
 // the lazy session the app uses: pick the first card every time and there is still something to choose

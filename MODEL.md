@@ -27,10 +27,11 @@ Working draft. The server plans a day as a tree of offers (a bundle). The web ap
 |---|---|
 | `title` | Short heading for the top band, written by the server ("Before 12:30") |
 | `window` | `[start, end]` local times of the block the node belongs to |
-| `cards` | Up to 4 card ids, already in the order to show them. All conditions have been applied by the planner |
+| `cards` | Up to 8 card ids, already in the order to show them (the first `show` are on screen). All conditions have been applied by the planner |
 | `quiet` | Text to show when there are no cards ("Nothing needed tonight.") |
-| `reroll` | Whether "Show different options" is available |
-| `children` | Outcome key to node id. Keys: `picked:<card id>`, `expired`, `reroll`. Every card has its own child, and a picked card never appears in it |
+| `show` | How many of `cards` are on screen (one to four). The cards after that wait below and fade in when the person pushes the cards up (swipe up, scroll, arrow down). At most four more |
+| `title` inside a category | The path, for example "Movement · Stretching" |
+| `children` | Outcome key to node id. Keys: `picked:<card id>`, `expired`, and `back` inside a category. Every card has its own child, and a picked card never appears in it |
 | `facts` | What is true at this node (for the planner and the checker). The app ignores it |
 
 ### Card
@@ -41,7 +42,7 @@ Working draft. The server plans a day as a tree of offers (a bundle). The web ap
 | `text` | What the user reads |
 | `steps` | Optional ordered checklist |
 | `label` | Short name used in the top band after a pick ("Coffee by the window") |
-| `duration_min` | How long the activity takes. The top band reads "Now: <label>, until <time>" for that long, then "Last: <label>" |
+| `duration_min` | How long the activity takes. The top band reads "Now: <label>, until <time>" for that long, then "Last selection: <label>" |
 | `tags` | `horizon` (short, medium, long), `goal`, `kind` (routine, variation, wild, checklist, info, quiet, flirty), `novel` |
 | `signal` | Weights toward the state estimate, for example `{"energy": 1, "social": -1}` |
 | `why` | Optional. Hidden unless the user asks |
@@ -59,18 +60,19 @@ That is all the app does. After a pick the cursor moves to the pick's child. The
 The planner searches the day and writes one node per situation.
 
 - **Blocks:** the day is cut into blocks (morning, afternoon, evening, night) and the calendar adds a "before" and a "during" block around each event.
-- **Options** say which blocks they can appear in, with a rank per block, what must already be true (`needs`), what they make true (`gives`), and when to skip them (`skipIf`). A flag marks options that are demanding, gentle, or only for low energy.
+- **Funnels:** the option bank is a tree, broad first. A first screen has only broad categories ("Move", "Eat", "Mindful practice", "Work", "Errands", "Relax"). A category (`opens`) adds the fact `in_<name>` and has no activity of its own; picking it opens a screen of narrower options (`under`), which may open narrower ones: Movement, then Stretching, then Hips and hamstrings; Errands, then Shopping, then Groceries; Responsibilities, then Personal, then Taxes. A screen shows only options at the level of the deepest open category. After an activity the day returns to broad choices, except in a `sticky` category (the morning routine) that stays open for its next step until it is empty. Picking a category is navigation only: it is not an activity and does not move the clock. `Back` closes the open category and offers it again. A category is only offered if something under it can be, so none opens onto an empty screen, and turning down the last thing inside one closes it.
+- **Options** say which blocks they can appear in, with a rank per block, what must already be true (`needs`), what they make true (`gives`), and when to skip them (`skipIf`, also per block). A flag marks options that are demanding, gentle, or only for low energy.
 - **Retiring options:** an option is skipped once everything it gives is already true, and `skipIf` retires it for other reasons. A market walk retires coffee, eggs and toast, and a lap round the block, because a croissant and coffee on the way back takes their place.
 - **Rejections:** a rejection is its own outcome. The planner answers it with a new set that leaves the option out for the rest of the day, built on demand rather than precomputed (on a real server this is a short request, hidden behind the question the user is answering). Rejecting something other options wait on (a shower before getting dressed, the bedtime wash) assumes it is handled, so the path is not locked. A rejection is logged but is not yet used by the learner.
-- **Follow-ups:** an option can open a path of its own. Writing offers "Read it back" and "Take a break" first, a park walk offers a bench, a bath offers getting comfortable, and "Cook something new" is followed only by recipes (the planner marks them `exclusive`, so they take over the screen until one is chosen). Each follow-up is just an option that needs the fact its parent gives, with a rank that puts it first.
-- **Always something:** the appointment has its own chain (leave, phone on silent, then small things) and the night has a bedtime routine that ends with "Turn the lights out", the one thing that ends the day. A set of small fillers (three slow breaths, a glass of water, a minute at the window) fit any block. They only fill a screen up to its floor, so a screen with real options never has them, and one with none never comes up empty.
-- **Facts** are what the user has done. `did_<option>` stops an option repeating within a block. `dressed` and `fed` carry into later blocks; the rest are dropped when a block ends.
+- **Follow-ups:** a few activities have a next step outside the category: deep work offers "Take a break", writing offers "Read it back", putting something off offers "Note the next step". Each is an option that needs the fact its parent gives, with a rank that puts it first. Cooking something new is a category whose options are recipes.
+- **Always something:** the appointment has its own chain (get ready, head out early, then head there) and the night has a bedtime routine that ends with "Turn the lights out", the one thing that ends the day. A set of small fillers (a few slow breaths, water, a minute with no screen) fit any block. They only fill a screen up to its floor, so a screen with real options never has them, and one with none never comes up empty.
+- **Facts** are what the user has done. `did_<option>` stops an option repeating within a block. `fed` carries into later blocks; the rest are dropped when a block ends.
 - **Conditions** are applied here, not in the app: an option that needs dry weather or daylight appears only if the block is mostly dry or light, and low energy removes demanding options and puts gentle ones first.
 - **Sleep bands:** last night's sleep is bucketed to about 5, 7 or 9 hours and the planner makes a variant of the day for each, so the device can switch the moment a wearable reports (or the user sets) the night. Together with energy it gives the day a capacity. Below zero (low energy, or a short night) there are no demanding options, gentle ones come first, lying down is offered, and screens are smaller. Above zero (a long night) demanding options rank earlier and screens are larger. Low energy after a long night comes out as an ordinary day. A new variant restores the node the user was on.
-- **How many cards:** one to four, decided by the planner. A block has a base count (a free afternoon four, the morning and evening three, the time before an appointment three, the appointment itself one). Low capacity takes one or two off, a long night adds one, so does having already done three things in the block, and a deterministic bit of variety nudges it either way. Never fewer than two unless there is only one real option or it is the appointment or the night.
-- **Paging:** a node shows the top candidates by rank. If more remain, `reroll` leads to a node with the next set.
-- **Flirty options** are found, not served. Each has a `chance`, applied deterministically per day, so it turns up on some days and not others. At most one flirty card is on a screen.
-- **Depth:** a block goes quiet after twelve picks, which a normal day does not reach.
+- **How many cards:** one to four on screen, decided by the planner: four on the first screen of a block (three after a short night or low energy, one for the appointment itself), three or four inside a category, one fewer once three things are done in the block. Up to four more wait below. The planner never puts small fillers below.
+- **Copy:** plain and short, written for someone who knows how to run their day. Broad on the first screen. No cards for obvious things (getting dressed, keys, shoes) and no incidental detail ("by the window"); detail belongs several levels down, if anywhere.
+- **Flirty options** are found, not served. Each has a `chance`, applied deterministically per day, so it turns up on some days and not others. The category "Something playful" is the flirty card; what is under it is ordinary.
+- **Depth:** the first screen of a block goes quiet after fourteen picks, which a normal day does not reach. (The test tree uses four, to stay small.)
 
 The planner works lazily. A node is created with its cards, and its children are created the first time the app arrives there, so the app always has the next screen for every card it could pick and the work stays small. A new plan (energy changed, weather arrived) restores the node the user was on, so progress through the morning is kept. For tests, `plan()` builds the whole tree with a lower cap, about 1,500 nodes for the sample day.
 
@@ -93,7 +95,7 @@ The planner works lazily. A node is created with its cards, and its children are
 
 ## Events (device to server)
 
-`offer_shown`, `card_viewed` (with count and dwell), `card_picked`, `card_rejected` (with `reason`: `not_feeling_it` or `more`, and the user's words when given), `reroll`, `offer_expired` (inaction), `app_opened`, `bundle_exhausted`, `note_sent`, `day_mode_set`, `adjustment_undone`, `branch_changed`, `lens_changed`. Each carries `node`, `cards`, `tags` as received, a context hash, a timestamp and an idempotency key.
+`offer_shown`, `card_viewed` (with count and dwell), `card_picked`, `card_rejected` (with `reason`: `not_feeling_it` or `more`, and the user's words when given), `cards_revealed` (pushed up to see more), `category_back`, `offer_expired` (inaction), `app_opened`, `bundle_exhausted`, `note_sent`, `day_mode_set`, `adjustment_undone`, `branch_changed`, `lens_changed`. Each carries `node`, `cards`, `tags` as received, a context hash, a timestamp and an idempotency key.
 
 ## Privacy split
 
@@ -102,9 +104,9 @@ The planner works lazily. A node is created with its cards, and its children are
 
 ## Screen
 
-A hamburger at the top left opens a menu: Today and Integrations. Integrations lists every app, feed and device that could be connected (calendars, messages, social, wearables and hardware, nutrition and training, cycle apps, sky and place, notes and files, focus tools). A few are live in this prototype: Google Calendar, weather and location, moon, and the sleep and cycle values. The rest are marked planned. Switching a lens on or off, and hiding its chips, happens there. The look follows the first demo: sage background, blush panel, paper cards.
+A hamburger at the top left opens a menu: Today and Integrations. Integrations lists every app, feed and device that could be connected (calendars, messages, social, wearables and hardware, nutrition and training, cycle apps, sky and place, notes and files, focus tools). A few are live in this prototype: Google Calendar, weather and location, moon, and the sleep and cycle values. The rest are marked planned. Switching a lens on or off, and hiding its chips, happens there. The look is set by a palette (Colors in the menu: Sand and sage by default, the original Sage, Robin's egg, Eggshell and teal, Soft brown, Lively), kept on the device. Each palette is a set of roles in `css/app.css` (page, text, card, card text, accent, panel), so adding one is one block of CSS plus a line in `js/app.js`.
 
-Three bands. Top: the node `title` plus a line about the last choice, built from the cursor history (it also reads "nothing picked since..." for inaction). Middle: 1 to 4 cards, centered. Bottom: context chips (operational facts, plus lens context only where it predicts the pick for this time slice; see Lenses). The test scrubber is an overlay in test builds only and never changes the layout.
+Three bands. A greeting ("Good morning") sits above the first choices of a block, not inside a category. Top: the node `title` plus a line about the last choice, built from the cursor history (it also reads "nothing picked since..." for inaction). Middle: 1 to 4 separate cards, centered (no joined box; a green accent edge on each), Pushing the cards up fades the rest in. Inside a category a Back link sits under the cards. Bottom: context chips (operational facts, plus lens context only where it predicts the pick for this time slice; see Lenses). The test scrubber is an overlay in test builds only and never changes the layout.
 
 Cards are chosen by tapping or by swiping right: the other cards fade out, the pick moves up into the title, and three seconds later the next set fades in. Swiping left is an active rejection. A kind question appears ("Can you tell me more about that, or are you just not feeling it?") with two answers: a few words, or just not feeling it. Either way the card slides away and the screen is replaced by a new set. Arrow keys do the same on a focused card.
 
