@@ -455,7 +455,7 @@
       '<button type="button" class="item" data-act="notesheet">Tell it something</button>' +
       '<button type="button" class="item" data-act="daysheet">Off-plan today</button>' +
       '<button type="button" class="item" data-act="exportlog">Export my log</button>' +
-      '<label class="item filebtn">Load my option bank<input type="file" accept=".json,application/json" data-act="bankfile" hidden></label>' +
+      '<button type="button" class="item" data-act="bankpick">Load my option bank</button>' +
       (load("cc.mybank", null) ? '<button type="button" class="item" data-act="removebank">Remove my option bank</button>' : "") +
       (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
       (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
@@ -866,6 +866,7 @@
     else if (act === "navmenu") { ui.menu = !ui.menu; }
     else if (act === "rediag") { runDiag(); }
     else if (act === "exportlog") { exportLog(); ui.menu = false; }
+    else if (act === "bankpick") { var pk = document.getElementById("bankpick"); if (pk) { pk.value = ""; pk.click(); } return; }
     else if (act === "removebank") { try { localStorage.removeItem("cc.mybank"); } catch (err) { /* storage blocked */ } applyBank(null); ui.menu = false; }
     else if (act === "fullscreen") { toggleFullscreen(); ui.menu = false; }
     else if (act === "install") { if (installEvent) { installEvent.prompt(); installEvent = null; } ui.menu = false; }
@@ -917,10 +918,12 @@
     }
   });
 
-  app.addEventListener("change", function (e) {
-    var t = e.target;
-    if (t.getAttribute("data-act") === "bankfile") {
-      var f = t.files && t.files[0];
+  // The file input lives outside the part of the page that is redrawn, so a redraw while the file picker is
+  // open cannot remove it.
+  var bankInput = document.getElementById("bankpick");
+  if (bankInput) {
+    bankInput.addEventListener("change", function () {
+      var f = bankInput.files && bankInput.files[0];
       if (!f) { return; }
       f.text().then(function (txt) {
         var b = JSON.parse(txt);
@@ -929,9 +932,12 @@
         applyBank(b);
         ui.menu = false; ui.screen = "today"; ui.enterOnce = true;
         render();
-      }).catch(function () { window.alert("That file is not an option bank. Choose the bank.json made by tools/convert-intake.js."); });
-      return;
-    }
+      }).catch(function () { window.alert("That file is not an option bank. Choose the bank file made by tools/convert-intake.js (unconscious-bank.json)."); });
+    });
+  }
+
+  app.addEventListener("change", function (e) {
+    var t = e.target;
     var key = t.getAttribute("data-test");
     if (t.getAttribute("data-profile") === "birth") {
       profile.birth = Astro.validBirth(t.value) ? t.value : "";
