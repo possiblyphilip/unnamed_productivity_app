@@ -64,7 +64,7 @@
   var ui = { diag: null, sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null };
   var holdTimer = null;
   var exitTimer = null;
-  var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], place: null, moon: Ctx.moonFor(new Date()) };
+  var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], allDay: [], calState: "", place: null, moon: Ctx.moonFor(new Date()) };
 
   // ---- time and context ----
   function todayKey() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
@@ -418,11 +418,23 @@
 
   function todayIso() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate(); }
 
+  // What the calendar gave back today, so it is clear it is being read.
+  function calSummary() {
+    if (live.calState && live.calState !== "ok") { return live.calState; }
+    if (live.calState !== "ok") { return "Reading today."; }
+    var t = live.calendar.length, a = live.allDay.length;
+    if (!t && !a) { return "Nothing on today."; }
+    var parts = [];
+    if (t) { parts.push(t + " timed: " + live.calendar.map(function (e) { return e.title; }).join(", ")); }
+    if (a) { parts.push(a + " all-day: " + live.allDay.join(", ")); }
+    return "Today: " + parts.join("; ") + ".";
+  }
+
   function integrationRow(id, name) {
     var on, detail, act, attrs = "", extra = "";
     if (id === "gcal") {
       on = Ctx.calendar.connected();
-      detail = on ? "Connected." : (/alendar|sign-in/.test(ui.calMsg) ? ui.calMsg : "Not connected.");
+      detail = on ? "Connected. " + calSummary() : (/alendar|sign-in/.test(ui.calMsg) ? ui.calMsg : "Not connected.");
       act = on ? "caldisconnect" : "calconnect";
     } else if (id === "weather") {
       on = !!live.place;
@@ -708,7 +720,10 @@
       live.weather = w.weather; live.sunrise = w.sunrise; live.sunset = w.sunset;
       render();
     }).catch(function () { ui.calMsg = "Weather didn't answer."; render(); });
-    Ctx.calendar.load().then(function (ev) { live.calendar = ev || []; render(); }).catch(function () { /* stays empty */ });
+    Ctx.calendar.load().then(function (r) {
+      live.calendar = r ? r.events : []; live.allDay = r ? r.allDay : []; live.calState = r ? "ok" : "";
+      render();
+    }).catch(function (err) { live.calState = "Could not read it (" + (err && err.message || "error") + ")."; render(); });
   }
 
   app.addEventListener("click", function (e) {

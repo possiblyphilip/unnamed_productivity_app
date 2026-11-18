@@ -138,9 +138,13 @@
       if (!r.ok) { throw new Error("calendar " + r.status); }
       return r.json();
     }).then(function (data) {
-      return (data.items || []).filter(function (e) { return e.start && e.start.dateTime && e.end && e.end.dateTime; }).map(function (e) {
+      var items = data.items || [];
+      var events = items.filter(function (e) { return e.start && e.start.dateTime && e.end && e.end.dateTime; }).map(function (e) {
         return { start: hhmm(minutesOf(e.start.dateTime)), end: hhmm(minutesOf(e.end.dateTime)), title: e.summary || "Busy", travel_min: 0 };
       });
+      // All-day events do not block time, so they are not planned around. They are listed so you can see they were read.
+      var allDay = items.filter(function (e) { return e.start && e.start.date; }).map(function (e) { return e.summary || "All-day event"; });
+      return { events: events, allDay: allDay };
     });
   }
 
