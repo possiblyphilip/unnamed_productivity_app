@@ -446,9 +446,23 @@
       '<button type="button" class="item" data-act="palettesheet">Colors</button>' +
       '<button type="button" class="item" data-act="notesheet">Tell it something</button>' +
       '<button type="button" class="item" data-act="daysheet">Off-plan today</button>' +
+      '<button type="button" class="item" data-act="exportlog">Export my log</button>' +
       (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
       (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
+  }
+
+  // Downloads everything the app has recorded on this device: every set of cards shown (with the lenses
+  // that were true, views and actions) and the picks the learner uses. The made-up history is left out.
+  function exportLog() {
+    flushLog();
+    var data = { exported: new Date().toISOString(), bank: load("cc.bank", "") || "built-in", impressions: log.all(), offers: offers, notes: notes.length };
+    var blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "unconscious-log-" + todayIso() + ".json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
   }
 
   function todayIso() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate(); }
@@ -841,6 +855,7 @@
     else if (act === "stats") { ui.screen = "stats"; ui.statsFocus = el.getAttribute("data-focus"); }
     else if (act === "navmenu") { ui.menu = !ui.menu; }
     else if (act === "rediag") { runDiag(); }
+    else if (act === "exportlog") { exportLog(); ui.menu = false; }
     else if (act === "fullscreen") { toggleFullscreen(); ui.menu = false; }
     else if (act === "install") { if (installEvent) { installEvent.prompt(); installEvent = null; } ui.menu = false; }
     else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.statsFocus = null; ui.menu = false; if (ui.screen === "install") { runDiag(); } }
