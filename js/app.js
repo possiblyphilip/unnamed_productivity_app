@@ -11,7 +11,7 @@
 
   // A refresh starts the day from scratch. Kept: the Google Calendar sign-in, the settings on the Integrations
   // screen, and the impression log (a record of what was shown and done, which must outlive a refresh).
-  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1, "cc.log": 1 };
+  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1, "cc.log": 1, "cc.mybank": 1 };
   try {
     Object.keys(localStorage).forEach(function (k) { if (k.indexOf("cc.") === 0 && !KEEP[k]) { localStorage.removeItem(k); } });
   } catch (e) { /* storage blocked */ }
@@ -88,7 +88,7 @@
   function snapSleep(h) { return h < 6 ? 5 : h < 8 ? 7 : 9; }
 
   // Commitments that repeat (from a personal bank), added to the day's calendar on the days they apply.
-  var recurring = [];
+  var recurring = [], bankName = "";
   function recurringFor(day) {
     var dow = new Date(day + "T12:00:00").getDay(), type = dow === 0 || dow === 6 ? "weekend" : "weekday";
     return recurring.filter(function (e) { return e.days === "any" || e.days === type; }).map(function (e) { return { start: e.start, end: e.end, title: e.title }; });
@@ -455,6 +455,8 @@
       '<button type="button" class="item" data-act="notesheet">Tell it something</button>' +
       '<button type="button" class="item" data-act="daysheet">Off-plan today</button>' +
       '<button type="button" class="item" data-act="exportlog">Export my log</button>' +
+      '<label class="item filebtn">Load my option bank<input type="file" accept=".json,application/json" data-act="bankfile" hidden></label>' +
+      (load("cc.mybank", null) ? '<button type="button" class="item" data-act="removebank">Remove my option bank</button>' : "") +
       (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
       (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
@@ -464,7 +466,7 @@
   // that were true, views and actions) and the picks the learner uses. The made-up history is left out.
   function exportLog() {
     flushLog();
-    var data = { exported: new Date().toISOString(), bank: load("cc.bank", "") || "built-in", impressions: log.all(), offers: offers, notes: notes.length };
+    var data = { exported: new Date().toISOString(), bank: bankName || "built-in", impressions: log.all(), offers: offers, notes: notes.length };
     var blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -864,6 +866,7 @@
     else if (act === "navmenu") { ui.menu = !ui.menu; }
     else if (act === "rediag") { runDiag(); }
     else if (act === "exportlog") { exportLog(); ui.menu = false; }
+    else if (act === "removebank") { try { localStorage.removeItem("cc.mybank"); } catch (err) { /* storage blocked */ } applyBank(null); ui.menu = false; }
     else if (act === "fullscreen") { toggleFullscreen(); ui.menu = false; }
     else if (act === "install") { if (installEvent) { installEvent.prompt(); installEvent = null; } ui.menu = false; }
     else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.statsFocus = null; ui.menu = false; if (ui.screen === "install") { runDiag(); } }
@@ -916,6 +919,19 @@
 
   app.addEventListener("change", function (e) {
     var t = e.target;
+    if (t.getAttribute("data-act") === "bankfile") {
+      var f = t.files && t.files[0];
+      if (!f) { return; }
+      f.text().then(function (txt) {
+        var b = JSON.parse(txt);
+        if (!validBank(b)) { throw new Error("not an option bank"); }
+        save("cc.mybank", b);
+        applyBank(b);
+        ui.menu = false; ui.screen = "today"; ui.enterOnce = true;
+        render();
+      }).catch(function () { window.alert("That file is not an option bank. Choose the bank.json made by tools/convert-intake.js."); });
+      return;
+    }
     var key = t.getAttribute("data-test");
     if (t.getAttribute("data-profile") === "birth") {
       profile.birth = Astro.validBirth(t.value) ? t.value : "";
@@ -940,22 +956,27 @@
   if (location.hash === "#clean") { test.on = false; }
   if (location.hash === "#test") { test.on = true; }
 
-  // A person's own option bank, if one is on this device (private/bank.json, never published). Without
-  // it the built-in sample bank is used. Loading a different bank starts the day again from the top.
+  // A person's own option bank. It comes from the Load my option bank item in the menu (kept on this device
+  // only) or, when running from a local server, from private/bank.json. Neither is ever published. Without
+  // one the built-in sample bank is used. A different bank starts the day again from the top.
+  function applyBank(b) {
+    Planner.useBank(b ? b.options : undefined, b ? b.keep : undefined);
+    sessions = {}; precomputed = "";
+    recurring = (b && b.recurring) || [];
+    bankName = b ? b.id : "";
+    var key = b ? b.id : "built-in";
+    if (load("cc.bank", "") !== key) { delete S.cursor; save("cc.bank", key); saveAll(); }
+  }
+  function validBank(b) {
+    return !!(b && Array.isArray(b.options) && b.options.length && b.options.every(function (o) { return o && o.id && o.text && o.label; }));
+  }
   function loadBank() {
+    var mine = load("cc.mybank", null);
+    if (validBank(mine)) { applyBank(mine); return Promise.resolve(); }
     var give = new Promise(function (res) { setTimeout(res, 2000, null); });
     var got = fetch("private/bank.json", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
-    return Promise.race([got, give]).then(function (b) {
-      if (!b || !b.options) { return; }
-      Planner.useBank(b.options, b.keep);
-      sessions = {}; precomputed = "";
-      if (load("cc.bank", "") !== b.id) { delete S.cursor; save("cc.bank", b.id); saveAll(); }
-      recurring = b.recurring || [];
-      bankName = b.id;
-    });
+    return Promise.race([got, give]).then(function (b) { if (validBank(b)) { applyBank(b); } });
   }
-  var bankName = "";
-
   loadBank().then(function () {
     if (test.live) { loadLive(); }
     render();
