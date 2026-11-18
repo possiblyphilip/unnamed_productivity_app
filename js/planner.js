@@ -197,23 +197,9 @@
     opt("step_outside", "Step outside for a minute", "Stepping outside", { dur: 3, goal: "g_body", daylight: true, at: anywhere(95) })
   ];
 
-  // Small things that only fill a screen up to its floor, so there is always something to choose
-  // without crowding a screen that already has real options.
-  ["breaths_3", "water", "pause_min", "note_mind", "step_outside"].forEach(function (id) {
-    OPTIONS.forEach(function (o) { if (o.id === id) { o.filler = true; } });
-  });
-
-  // Depth of each category: a fact in_<name> is as deep as its deepest opener, plus one. An option's level is
-  // the depth of the category it sits under (0 for the first screen). A screen only shows options at the
-  // level of the deepest category that is open.
-  var OPENERS = {}, STICKY = {}, DEPTH = {}, LABEL = {};
-  OPTIONS.forEach(function (o) {
-    if (o.opens) {
-      (OPENERS[o.opens] = OPENERS[o.opens] || []).push(o);
-      if (o.sticky) { STICKY[o.opens] = true; }
-      LABEL[o.opens] = LABEL[o.opens] || o.label;
-    }
-  });
+  // Tables built from the bank. They are rebuilt when a different bank is loaded (useBank).
+  var FILLERS = ["breaths_3", "water", "pause_min", "note_mind", "step_outside"];
+  var OPENERS, STICKY, DEPTH, LABEL, BY_ID;
   function depthOf(fact) {
     if (DEPTH[fact] != null) { return DEPTH[fact]; }
     var d = 1;
@@ -222,7 +208,45 @@
     return d;
   }
   function levelOf(o) { return o.under ? depthOf(o.under) : 0; }
-  OPTIONS.forEach(function (o) { o.level = levelOf(o); });
+
+  // Depth of each category: a fact in_<name> is as deep as its deepest opener, plus one. An option's level is
+  // the depth of the category it sits under (0 for the first screen). A screen only shows options at the
+  // level of the deepest category that is open. Small things that only fill a screen up to its floor are
+  // marked as fillers, so there is always something to choose without crowding a screen that has real options.
+  function rebuild() {
+    OPENERS = {}; STICKY = {}; DEPTH = {}; LABEL = {}; BY_ID = {};
+    OPTIONS.forEach(function (o) { if (FILLERS.indexOf(o.id) !== -1) { o.filler = true; } });
+    OPTIONS.forEach(function (o) {
+      if (o.opens) {
+        (OPENERS[o.opens] = OPENERS[o.opens] || []).push(o);
+        if (o.sticky) { STICKY[o.opens] = true; }
+        LABEL[o.opens] = LABEL[o.opens] || o.label;
+      }
+    });
+    OPTIONS.forEach(function (o) { o.level = levelOf(o); });
+    OPTIONS.forEach(function (o) { BY_ID[o.id] = o; });
+  }
+  rebuild();
+
+  // Swap in another option bank (a person's own). `keep` lists ids of the built-in options to keep alongside
+  // it, such as the appointment chain, the bedtime steps and the small fillers. Calling it with no list
+  // restores the built-in bank.
+  var BUILT_IN = OPTIONS.slice();
+  function useBank(list, keep) {
+    var want = {};
+    (keep || []).forEach(function (id) { want[id] = true; });
+    var base = list ? BUILT_IN.filter(function (o) { return want[o.id]; }) : BUILT_IN;
+    var next = base.concat(list || []);
+    OPTIONS.length = 0;
+    next.forEach(function (o) { OPTIONS.push(o); });
+    rebuild();
+  }
+
+  // Weekday or weekend, from the day being planned.
+  function dayType(ctx) {
+    var d = new Date(ctx.day + "T12:00:00").getDay();
+    return d === 0 || d === 6 ? "weekend" : "weekday";
+  }
 
   // ---- the day's blocks, built from the calendar ----
   var BASE = [["morning", 450, 810], ["afternoon", 810, 1020], ["evening", 1020, 1200], ["night", 1200, 1439]];
@@ -302,6 +326,7 @@
       if (!slot || o.level !== level || facts["did_" + o.id] || facts["no_" + o.id]) { return; }
       if (o.under && !facts["in_" + o.under]) { return; }
       if (o.only && o.only.indexOf(block.type) === -1) { return; }
+      if (o.days && o.days !== "any" && o.days !== dayType(ctx)) { return; }
       if ((slot.needs || []).some(function (n) { return !facts[n]; })) { return; }
       if ((o.skipIf || []).concat(slot.skipIf || []).some(function (n) { return facts[n]; })) { return; }
       if (o.gives && o.gives.every(function (g) { return facts[g]; })) { return; }
@@ -365,9 +390,6 @@
     Object.keys(facts).forEach(function (k) { if (PERSIST[k] || k.indexOf("no_") === 0) { f[k] = true; } });
     return f;
   }
-
-  var BY_ID = {};
-  OPTIONS.forEach(function (o) { BY_ID[o.id] = o; });
 
   // Inside a category the heading is the path ("Movement · Stretching"); otherwise the block's own.
   function pathTitle(facts, base) {
@@ -510,5 +532,5 @@
     return s.bundle;
   }
 
-  return { plan: plan, session: session, OPTIONS: OPTIONS, makeBlocks: makeBlocks, hash: hash, sleepBand: sleepBand };
+  return { plan: plan, session: session, useBank: useBank, OPTIONS: OPTIONS, makeBlocks: makeBlocks, hash: hash, sleepBand: sleepBand };
 });

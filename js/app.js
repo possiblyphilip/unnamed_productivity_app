@@ -917,8 +917,25 @@
   if (location.hash === "#clean") { test.on = false; }
   if (location.hash === "#test") { test.on = true; }
 
-  if (test.live) { loadLive(); }
-  render();
+  // A person's own option bank, if one is on this device (private/bank.json, never published). Without
+  // it the built-in sample bank is used. Loading a different bank starts the day again from the top.
+  function loadBank() {
+    var give = new Promise(function (res) { setTimeout(res, 2000, null); });
+    var got = fetch("private/bank.json", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+    return Promise.race([got, give]).then(function (b) {
+      if (!b || !b.options) { return; }
+      Planner.useBank(b.options, b.keep);
+      sessions = {}; precomputed = "";
+      if (load("cc.bank", "") !== b.id) { delete S.cursor; save("cc.bank", b.id); saveAll(); }
+      bankName = b.id;
+    });
+  }
+  var bankName = "";
+
+  loadBank().then(function () {
+    if (test.live) { loadLive(); }
+    render();
+  });
   setInterval(function () {
     if (test.minutes === null && !ui.sheet && !ui.menu && (ui.screen === "today" || ui.screen === "stats") && !ui.drawer) { render(); }
   }, 30000);

@@ -1,0 +1,62 @@
+You will be given the transcript of an intake interview for a day-guide app. Turn it into one JSON record. Output the JSON only, in a single code block, with no commentary.
+
+RULES
+1. Use only what the person said. Quote or closely paraphrase their words. Do not add activities, goals or facts they did not mention, and do not pad the list with generic suggestions.
+2. Unknown means null, never a placeholder. Do not use 0, "", or an empty list to mean "not stated". An empty list means "the person said there are none".
+3. An estimate is allowed only for duration_min, blocks and days, and only when the transcript clearly implies it. List every estimated field in the option's "estimated" array so a person can review it. Otherwise leave it null.
+4. Things the person says they no longer do, or have no time for, go in "dormant_interests", not "options". Events with a date or season (races, trips, appointments) go in "profile.events", not "options". A one-time wish with no frequency also goes in "events".
+5. Anything the person declined or skipped goes in "profile.skipped". Do not guess an answer for it.
+6. Where two statements disagree, use the later one and add a note to "gaps".
+7. Write children's and other people's names only inside "profile.day" and "profile.fixed". Everywhere else, use "a child", "a friend" and so on.
+8. "needs", "gives" and "skip_if" are short lowercase snake_case facts that can be true or false on a given day (for example "dry_weather", "daylight", "friend_available", "fed", "has_gym_access", "grocery_trip", "low_free_time"). Never write sentences. Never put never_offer items in skip_if.
+9. Every option that serves a stated goal gets that goal's id. If no goal was stated for it, goal is null and the question goes in "gaps".
+10. "gaps" lists what a follow-up interview should ask, as short questions, most important first. Include every null that matters (durations, goals, when an activity fits, what to offer at low energy).
+
+SCHEMA
+
+{
+  "profile": {
+    "day": { "weekday": "", "weekend": "", "wake": "", "sleep": "" },
+    "fixed": [{ "what": "", "days": "weekday|weekend|any|null", "start": "HH:MM|null", "end": "HH:MM|null", "flexible_by": "text|null" }],
+    "events": [{ "what": "", "when": "", "frequency": "" }],
+    "goals": [{ "id": "g_1", "text": "", "horizon": "short|medium|long", "standing": true, "source": "stated|inferred" }],
+    "constraints": [{ "text": "", "permanence": "permanent|temporary|unknown", "until": "text|null" }],
+    "never_offer": [],
+    "novelty": { "appetite": "low|medium|high", "by_domain": {}, "likes": [], "dislikes": [] },
+    "energy": {
+      "low": { "feels_like": "", "offer": null },
+      "normal": { "feels_like": "", "offer": null },
+      "high": { "feels_like": "", "offer": null }
+    },
+    "check_in": "question|summary|never|null",
+    "check_in_note": "",
+    "lenses_allowed": null, "lenses_refused": null,
+    "dormant_interests": [{ "what": "", "note": "" }],
+    "skipped": []
+  },
+  "options": [
+    {
+      "id": "o_01", "parent": null, "category": false,
+      "text": "", "label": "",
+      "kind": "routine|variation|wild|checklist|info|quiet",
+      "goal": "g_1|null",
+      "duration_min": null,
+      "days": "weekday|weekend|any|null",
+      "blocks": { "morning": 1 },
+      "needs": [], "gives": [], "skip_if": [],
+      "demanding": false, "gentle": false,
+      "source": "stated|inferred", "confidence": "high|medium|low",
+      "estimated": []
+    }
+  ],
+  "gaps": []
+}
+
+OPTION RULES
+- category: true for a node that only opens narrower options (it has children and no activity of its own). Categories have duration_min null.
+- blocks: when the option fits, using morning, afternoon, evening, night. A number from 1 (the most natural time) to 10. Leave out a block where it does not fit. null if unknown. Never 0.
+- kind: routine = something they already do regularly; variation = a change to a routine for energy, circumstances or novelty; wild = outside their usual pattern; checklist = a short list of steps; info = something to know; quiet = rest.
+- parent: build the funnel from broad to narrow with parent, so specific activities sit under broad categories.
+- text is short and plain, written for someone who knows how to run their day. label is the short name shown after they pick it.
+- demanding: true only for real physical or mental effort. gentle: true for what suits a low-energy day.
+- source "inferred" is only for an option that is a direct follow-on from something said (for example, reaching out to a friend after "I want to ride with friends more"). Give it confidence medium or low.

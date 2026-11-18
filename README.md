@@ -24,7 +24,11 @@ The red cross-hatched strip on the right is a test-only time scrubber, hidden by
 
 - `MODEL.md`: the data model.
 - `js/`: `planner.js` (stands in for the server and plans the day as a tree), `model.js` (walks the tree), `sample.js` (one invented day), `learner.js` (what predicts picks), `sim.js` (made-up history), `context.js` (moon, weather, calendar), `log.js` (the impression log: what was shown, which lenses were true, views and actions), `astro.js` (sun sign, moon-sign relation, life path from a birthday), `app.js` (screen).
-- `tools/check-log.js` checks the impression log. `tools/check-sample-day.js` plans the sample day and checks the tree. `tools/print-tree.js` prints the planned tree as an outline. `tools/simulate-learner.js` measures the learner on simulated users (about 30 seconds).
+- `tools/check-log.js` checks the impression log. `tools/convert-intake.js` and `tools/check-bank.js` handle a personal option bank. `tools/check-sample-day.js` plans the sample day and checks the tree. `tools/print-tree.js` prints the planned tree as an outline. `tools/simulate-learner.js` measures the learner on simulated users (about 30 seconds).
+
+## Using your own options
+
+`prompts/intake-interview.txt` is for an AI interviewer and `prompts/extract-intake.txt` turns the saved transcript into a record. `node tools/convert-intake.js <record.json>` writes `private/bank.json`, which the app loads on that device in place of the sample bank (the appointment, bedtime and filler options are kept). `node tools/check-bank.js` plans a weekday and a weekend with it and prints each block's first screen. `private/` and the intake files are not committed, because they hold personal details.
 
 ## Run locally
 
