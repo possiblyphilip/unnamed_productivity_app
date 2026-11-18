@@ -87,14 +87,21 @@
   function hm(h) { var t = Math.round(h * 60), m = t % 60; return Math.floor(t / 60) + "h" + (m ? " " + m + "m" : ""); }
   function snapSleep(h) { return h < 6 ? 5 : h < 8 ? 7 : 9; }
 
+  // Commitments that repeat (from a personal bank), added to the day's calendar on the days they apply.
+  var recurring = [];
+  function recurringFor(day) {
+    var dow = new Date(day + "T12:00:00").getDay(), type = dow === 0 || dow === 6 ? "weekend" : "weekday";
+    return recurring.filter(function (e) { return e.days === "any" || e.days === type; }).map(function (e) { return { start: e.start, end: e.end, title: e.title }; });
+  }
+
   function ctxNow() {
     if (!test.live) {
       var c = Sample.context;
-      return { day: c.day, weather: c.weather, sunrise: c.sunrise, sunset: c.sunset, calendar: c.calendar, moon: { name: cap(c.moon.phase), group: Learner.moonGroup(c.moon.phase), sign: c.moon.sign } };
+      return { day: c.day, weather: c.weather, sunrise: c.sunrise, sunset: c.sunset, calendar: c.calendar.concat(recurringFor(c.day)), moon: { name: cap(c.moon.phase), group: Learner.moonGroup(c.moon.phase), sign: c.moon.sign } };
     }
     var d = new Date();
     var day = d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate();
-    return { day: day, weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar, moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation), sign: live.moon.sign } };
+    return { day: day, weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar.concat(recurringFor(day)), moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation), sign: live.moon.sign } };
   }
 
   function sleepSet() { return test.sleepDay === todayKey(); }
@@ -154,7 +161,7 @@
   // One plan per sleep band (about 5, 7 or 9 hours), kept for the context it was made for. Switching
   // between them is instant, and the new plan restores the node the user was on.
   function planFor(c, sleep) {
-    var sig = [c.day, test.live ? 1 : 0, test.energy, sleep, live.weather.length, live.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
+    var sig = [c.day, test.live ? 1 : 0, test.energy, sleep, live.weather.length, c.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
     if (!sessions[sig]) { sessions[sig] = Planner.session(c, { energy: test.energy, sleep: sleep }); }
     return sessions[sig];
   }
@@ -943,6 +950,7 @@
       Planner.useBank(b.options, b.keep);
       sessions = {}; precomputed = "";
       if (load("cc.bank", "") !== b.id) { delete S.cursor; save("cc.bank", b.id); saveAll(); }
+      recurring = b.recurring || [];
       bankName = b.id;
     });
   }

@@ -79,7 +79,7 @@
     // ---- the appointment ----
     opt("getting_ready", "Get ready", "Getting ready", { dur: 20, signal: { overwhelm: -1 }, gives: ["ready"], onReject: ["ready"], at: { before_event: { rank: 1 } } }),
     opt("leave_early", "Head out a little early", "Heading out early", { kind: "variation", dur: 10, signal: { overwhelm: -1 }, at: { before_event: { rank: 0.5, needs: ["ready"] } } }),
-    opt("leave_now", "Head to the appointment", "Heading to the appointment", { kind: "info", dur: 14, gives: ["headed"], at: { during_event: { rank: 1 } } }),
+    opt("leave_now", "Head there", "Heading there", { kind: "info", dur: 14, gives: ["headed"], at: { during_event: { rank: 1 } } }),
 
     // ---- morning routine -> breakfast ----
     sub("shower", "routine", "Shower", "Showering", { dur: 15, goal: "g_body", signal: { energy: 1 }, gives: ["showered"], onReject: ["showered"], rank: 1 }),

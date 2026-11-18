@@ -14,7 +14,9 @@ Planner.useBank(bank.options, bank.keep);
 const problems = [];
 const bad = (m) => problems.push(m);
 function day(label, date, over) {
-  const ctx = Object.assign({}, Sample.context, { day: date, calendar: [] }, over || {});
+  const dow = new Date(date + "T12:00:00").getDay(), type = dow === 0 || dow === 6 ? "weekend" : "weekday";
+  const fixed = (bank.recurring || []).filter((e) => e.days === "any" || e.days === type).map((e) => ({ start: e.start, end: e.end, title: e.title }));
+  const ctx = Object.assign({}, Sample.context, { day: date, calendar: fixed }, over || {});
   const s = Planner.session(ctx, { energy: "normal", sleep: 7 });
   const b = s.bundle;
   const blocks = b.assumptions.blocks;
@@ -47,6 +49,6 @@ function day(label, date, over) {
 }
 day("Weekday", "2026-11-17");
 day("Weekend", "2026-11-21");
-day("Weekday, appointment", "2026-11-17", { calendar: [{ start: "12:30", end: "13:30", title: "Appointment" }] });
+day("Weekday, plus a 12:30 appointment", "2026-11-17", { calendar: (bank.recurring || []).map((e) => ({ start: e.start, end: e.end, title: e.title })).concat([{ start: "12:30", end: "13:30", title: "Appointment" }]).sort((a, b) => a.start.localeCompare(b.start)) });
 console.log("\n" + (problems.length ? problems.length + " problems:\n" + problems.join("\n") : "bank checks passed"));
 process.exit(problems.length ? 1 : 0);

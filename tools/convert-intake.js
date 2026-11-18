@@ -82,14 +82,36 @@ const out = list.map(function (o) {
   return x;
 });
 
+// Fixed commitments become recurring calendar events, so the planner makes "Before 4:25" and "during" blocks
+// around them like any appointment. Only entries with a time count. Estimated end or start times are listed
+// in the report. Work calls and meetings happen at the desk, so they get no getting-ready steps and are left out.
+const DAY_START = 450;
+const m = function (t) { const p = t.split(":"); return Number(p[0]) * 60 + Number(p[1]); };
+const hhmm = function (n) { return String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0"); };
+const recurring = [];
+report.recurring = { used: [], estimated: [], left_out: [] };
+((intake.profile && intake.profile.fixed) || []).forEach(function (f) {
+  const title = f.what.replace(/\s*\([^)]*\)/g, "").trim();
+  if (/\b(calls?|meetings?|standups?)\b/i.test(f.what)) { report.recurring.left_out.push(title + ": work, done at the desk"); return; }
+  if (!f.start && !f.end) { report.recurring.left_out.push(title + ": no time given"); return; }
+  let start = f.start ? m(f.start) : null, end = f.end ? m(f.end) : null, est = [];
+  if (start === null) { start = end - 30; est.push("start"); }
+  if (end === null) { end = start + 20; est.push("end"); }
+  if (start < DAY_START) { report.recurring.left_out.push(title + ": starts before the planner's day (" + hhmm(DAY_START) + ")"); return; }
+  recurring.push({ title: title, start: hhmm(start), end: hhmm(end), days: f.days || "any" });
+  report.recurring.used.push(title + " " + hhmm(start) + "-" + hhmm(end) + " (" + (f.days || "any") + ")");
+  if (est.length) { report.recurring.estimated.push(title + ": " + est.join(" and ") + " estimated"); }
+});
+
 const bank = {
   id: "intake-" + new Date().toISOString().slice(0, 10),
   keep: KEEP,
   options: out,
+  recurring: recurring,
   report: report
 };
 const dir = path.join(__dirname, "..", "private");
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, "bank.json"), JSON.stringify(bank, null, 1));
-console.log("wrote private/bank.json: " + out.length + " options, " + out.filter(function (o) { return o.opens; }).length + " categories");
-console.log(JSON.stringify(report, null, 1));
+console.log("wrote private/bank.json: " + out.length + " options, " + out.filter(function (o) { return o.opens; }).length + " categories, " + recurring.length + " recurring events");
+console.log(JSON.stringify(report.recurring, null, 1));
