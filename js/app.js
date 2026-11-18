@@ -10,7 +10,7 @@
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 
   // A refresh starts the day from scratch. Kept: the Google Calendar sign-in, and the settings on the Integrations screen.
-  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1 };
+  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1 };
   try {
     Object.keys(localStorage).forEach(function (k) { if (k.indexOf("cc.") === 0 && !KEEP[k]) { localStorage.removeItem(k); } });
   } catch (e) { /* storage blocked */ }
@@ -19,11 +19,11 @@
   var INTEGRATIONS = [
     ["Schedule", [["gcal", "Google Calendar"]]],
     ["Place and sky", [["weather", "Weather and location"], ["moon", "Moon phase"]]],
-    ["You, set by hand", [["sleep", "Sleep hours"], ["cycle", "Cycle days"]]],
+    ["You, set by hand", [["energy", "Energy today"], ["sleep", "Sleep hours"], ["cycle", "Cycle days"]]],
     ["Astrology", [["birthday", "Birthday"], ["zodiac", "Moon sign and season"], ["sign", "Your sign and the moon"]]]
   ];
   var LENS_IDS = { sleep: true, moon: true, cycle: true, zodiac: true, sign: true };
-  var LENS_NOTE = { sleep: "You set it each morning (5, 7 or 9 hours).", cycle: "You set the day.", moon: "Calculated.", zodiac: "Calculated.", sign: "Your Sun sign against today's moon sign." };
+  var LENS_NOTE = { sleep: "Choose last night's sleep to show it.", cycle: "Choose a day to show it.", moon: "Calculated.", zodiac: "Calculated.", sign: "Your Sun sign against today's moon sign." };
   var DAY_MODES = [["sick", "Sick"], ["travel", "Travelling"], ["big", "Big day"], ["rough", "Rough day"]];
   var DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var STOPS = [["8:10a", 490], ["11:40a", 700], ["12:40p", 760], ["2:10p", 850], ["6:10p", 1090], ["8:30p", 1230]];
@@ -41,7 +41,13 @@
   var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false }, zodiac: { enabled: true, hidden: false }, sign: { enabled: false, hidden: false } }, load("cc.lenses", {}));
   var profile = Object.assign({ birth: "", cals: {} }, load("cc.profile", {}));
   var notes = load("cc.notes", []);
-  var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true, auto: true }, load("cc.test", {}));
+  var test = Object.assign({ on: false, minutes: null, dow: null, live: true, energy: "normal", sleep: 7, cycleDay: 0, sleepDay: "", pause: true, auto: false }, load("cc.test", {}));
+  // What the person sets by hand on the Integrations screen is kept. Last night's sleep only counts for the day it was set.
+  (function () {
+    var you = load("cc.you", {});
+    ["sleep", "cycleDay", "energy", "sleepDay"].forEach(function (k) { if (you[k] !== undefined) { test[k] = you[k]; } });
+    if (test.sleepDay !== todayKey()) { test.sleep = 7; test.sleepDay = ""; }
+  })();
   test.sleep = snapSleep(test.sleep);
   // Colour palettes. Each is a set of roles in css/app.css, picked from the menu and kept on this device.
   var PALETTES = [
@@ -85,9 +91,11 @@
     return { day: day, weather: live.weather, sunrise: live.sunrise, sunset: live.sunset, calendar: live.calendar, moon: { name: live.moon.name, group: Learner.moonGroupFromElongation(live.moon.elongation), sign: live.moon.sign } };
   }
 
+  function sleepSet() { return test.sleepDay === todayKey(); }
+
   function lensStates(c) {
     var s = {};
-    if (lenses.sleep.enabled) { s.sleep = Learner.sleepState(test.sleep); }
+    if (lenses.sleep.enabled && sleepSet()) { s.sleep = Learner.sleepState(test.sleep); }
     if (lenses.moon.enabled) { s.moon = c.moon.group; }
     if (lenses.cycle.enabled && test.cycleDay > 0) { s.cycle = Learner.cyclePhase(test.cycleDay); }
     if (lenses.sign.enabled && hasSign()) { s.sign = Astro.relation(sunSign(profile.birth), c.moon.sign) || undefined; }
@@ -102,15 +110,6 @@
     if (id === "moon") { return c.moon.name; }
     if (id === "sign") { return "Moon in " + c.moon.sign + ", your " + sunSign(profile.birth) + " Sun"; }
     return cap(Learner.cyclePhase(test.cycleDay)) + " phase, day " + test.cycleDay;
-  }
-
-  // Invented tracker readings that move with the sleep setting and the time of day.
-  function fitnessLines(x) {
-    var band = Planner.sleepBand(test.sleep);
-    var lines = ["Readiness " + { 5: 61, 7: 78, 9: 89 }[band], "Resting heart rate 58", "HRV " + { 5: 41, 7: 54, 9: 63 }[band]];
-    var steps = Math.round(Math.max(0, x.m - 420) * 0.75) * 10;
-    if (steps >= 200) { lines.push(steps.toLocaleString("en-US") + " steps so far"); }
-    return lines;
   }
 
   // One plan per sleep band (about 5, 7 or 9 hours), kept for the context it was made for. Switching
@@ -204,7 +203,7 @@
     var hour = Math.floor(x.m / 30);
     function rotate(id, options) { return options.length ? options[(hour + LENS_ORDER.indexOf(id)) % options.length] : null; }
     var texts = {
-      sleep: "Slept " + hm(test.sleep),
+      sleep: sleepSet() ? "Slept " + hm(test.sleep) : null,
       cycle: test.cycleDay > 0 ? lensText("cycle", x.c) : null,
       moon: x.c.moon.name,
       zodiac: x.c.moon.sign ? rotate("zodiac", (lenses.sign.enabled && hasSign() ? [] : ["Moon in " + x.c.moon.sign]).concat([sunSign(x.c.day) + " season"])) : null,
@@ -320,12 +319,7 @@
     var c = x.c, rows;
     var nowRows = operational(x).map(function (t) { return statRow("", t); });
     var calendar = (c.calendar || []).map(function (e) { return statRow(e.title, Model.clock(Model.mins(e.start)) + " to " + Model.clock(Model.mins(e.end))); });
-    var body = [statRow("Sleep", hm(test.sleep))].concat(fitnessLines(x).map(function (t) {
-      var st = /^([\d,]+) steps/.exec(t);
-      if (st) { return statRow("Steps so far", st[1]); }
-      var m = /^(.*?)\s+([\d,]+)(\s.*)?$/.exec(t);
-      return m ? statRow(m[1] + (m[3] || ""), m[2]) : statRow("", t);
-    }));
+    var body = sleepSet() ? [statRow("Sleep", hm(test.sleep))] : [];
     if (test.cycleDay > 0) { body.push(statRow("Cycle", cap(Learner.cyclePhase(test.cycleDay)) + " phase, day " + test.cycleDay)); }
     var sky = [statRow("Moon", c.moon.name)];
     if (c.moon.sign) { sky.push(statRow("Moon sign", c.moon.sign), statRow("Season", sunSign(c.day))); }
@@ -455,6 +449,9 @@
       on = !!live.place;
       detail = live.place ? "Using " + live.place.label + "." : "Tap to use your location.";
       act = "locate";
+    } else if (id === "energy") {
+      return '<div class="integ"><label class="name" for="energy">Energy today</label><span class="detail">Low energy takes out demanding options and puts gentle ones first.</span>' +
+        '<select id="energy" class="dateinput" data-test="energy"><option value="normal"' + (test.energy === "normal" ? " selected" : "") + '>Normal</option><option value="low"' + (test.energy === "low" ? " selected" : "") + ">Low</option></select></div>";
     } else if (id === "birthday") {
       return '<div class="integ"><label class="name" for="birth">Birthday</label><span class="detail">Used on this device for the astrology rows. Optional.</span>' +
         '<input id="birth" class="dateinput" type="date" data-profile="birth" max="' + todayIso() + '" value="' + esc(profile.birth) + '"></div>';
@@ -464,7 +461,15 @@
       detail = needsBirth ? "Add your birthday first." : (on ? "On. " : "Off. ") + LENS_NOTE[id];
       act = needsBirth ? "" : "lens";
       attrs = ' data-lens="' + id + '"' + (needsBirth ? " disabled" : "");
-      if (on) { extra = '<div class="integ-extra"><button type="button" class="quiet" data-act="lenshide" data-lens="' + id + '">' + (lenses[id].hidden ? "Show on screen" : "Hide on screen") + "</button></div>"; }
+      var control = "";
+      if (id === "sleep") {
+        control = '<label class="small-label">Last night <select class="dateinput" data-test="sleep"><option value=""' + (sleepSet() ? "" : " selected") + ' disabled>Not set today</option>' +
+          [5, 7, 9].map(function (h) { return '<option value="' + h + '"' + (sleepSet() && test.sleep === h ? " selected" : "") + ">About " + h + " hours</option>"; }).join("") + "</select></label> ";
+      } else if (id === "cycle") {
+        control = '<label class="small-label">Cycle day <select class="dateinput" data-test="cycleDay"><option value="0"' + (test.cycleDay ? "" : " selected") + ">Off</option>" +
+          Array.apply(null, Array(28)).map(function (_, i) { return '<option value="' + (i + 1) + '"' + (test.cycleDay === i + 1 ? " selected" : "") + ">Day " + (i + 1) + "</option>"; }).join("") + "</select></label> ";
+      }
+      if (on || control) { extra = '<div class="integ-extra">' + control + (on ? '<button type="button" class="quiet" data-act="lenshide" data-lens="' + id + '">' + (lenses[id].hidden ? "Show on screen" : "Hide on screen") + "</button>" : "") + "</div>"; }
     } else {
       return "";
     }
@@ -568,7 +573,7 @@
   var current = null;
 
   // ---- actions ----
-  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.profile", profile); save("cc.notes", notes); save("cc.test", test); }
+  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.profile", profile); save("cc.notes", notes); save("cc.test", test); save("cc.you", { sleep: test.sleep, cycleDay: test.cycleDay, energy: test.energy, sleepDay: test.sleepDay }); }
 
   // A clean run for testing: back to the first stop of the morning, nothing picked, no day mode, no sheet open.
   // Picks made today during testing are dropped so they do not feed the learner; made-up history and
@@ -852,6 +857,7 @@
       else if (key === "dow") { test.dow = val === "" ? null : Number(val); }
       else if (key === "live") { test.live = val === "1"; if (test.live) { loadLive(); } }
       else if (key === "energy") { test.energy = val; }
+      else if (key === "sleep") { test.sleep = snapSleep(Number(val)); test.sleepDay = todayKey(); }
       else { test[key] = Number(val); }
     } else { return; }
     saveAll();

@@ -16,9 +16,9 @@ Open it on a phone. On iPhone: Share, then Add to Home Screen. On Android: the b
 
 A refresh starts the day from scratch (only the Google Calendar sign-in is kept). A made-up 20-week pick history is built in, so learned chips and ordering show from the first open. Sleep is a three-way selector (5, 7 or 9 hours) and each setting is a different plan of the day.
 
-The day moves on by itself: every pick moves the time forward 30 minutes, and the test strip shows the time. The bottom band shows a few lenses (sleep, cycle, moon, zodiac, a fitness tracker) with invented readings, switched on or off under Integrations.
+Time is the real clock. In test mode (`#test`) every pick can move the time forward 30 minutes, and the test strip shows and sets the time. The bottom band shows the lenses that are switched on under Integrations (sleep and cycle day as you set them, moon, and the astrology rows).
 
-The red cross-hatched strip on the right is a test-only time scrubber. Add `#clean` to the address to hide it, `#test` to bring it back.
+The red cross-hatched strip on the right is a test-only time scrubber, hidden by default. Add `#test` to the address to bring it back. Sleep, cycle day and energy are set on the Integrations screen and kept across refreshes.
 
 ## Files
 
