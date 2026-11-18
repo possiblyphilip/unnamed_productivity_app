@@ -111,7 +111,7 @@ Separate from the learner's counts and from the events above: a raw record of ev
 | `cards` | Every card on the node in the planned order: `pos`, `card`, `option`, `active`, `onScreen` (on screen or waiting below) and `seenAt` (when it first came into view, so cards revealed later get a later time) |
 | `views` | `[start, end]` for each stretch in which the set was actually on screen. The count is how many times it was looked at, the sum is the dwell. Leaving the app, opening the menu or another screen ends a view and coming back starts another |
 | `events` | What was done, in order: `tap`, `swipe_right`, `swipe_left`, `reveal` (with `how`: `swipe_up`, `scroll`, `key`, `tap`), `back`, `nav`, `reject_reason` (`not_feeling_it` or `more`; the words themselves go to notes, not here) |
-| `outcome`, `pick` | `picked`, `rejected`, `back`, `nav`, `expired` (inaction) or `open` while still showing, and the option picked or turned down |
+| `outcome`, `pick` | `picked`, `rejected`, `back`, `nav`, `expired` (inaction), `left` (the page was closed or reloaded) or `open` while still showing, and the option picked or turned down |
 
 A set opens when it appears and closes on the first pick, rejection, back or navigation, or when the clock moves the person to the next node. A set is not opened while the cards are hidden after a pick. "More for me" is a push up (swipe up, scroll or arrow down), recorded as `reveal`.
 

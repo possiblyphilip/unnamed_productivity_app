@@ -9,8 +9,9 @@
   function load(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 
-  // A refresh starts the day from scratch. Kept: the Google Calendar sign-in, and the settings on the Integrations screen.
-  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1 };
+  // A refresh starts the day from scratch. Kept: the Google Calendar sign-in, the settings on the Integrations
+  // screen, and the impression log (a record of what was shown and done, which must outlive a refresh).
+  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1, "cc.log": 1 };
   try {
     Object.keys(localStorage).forEach(function (k) { if (k.indexOf("cc.") === 0 && !KEEP[k]) { localStorage.removeItem(k); } });
   } catch (e) { /* storage blocked */ }

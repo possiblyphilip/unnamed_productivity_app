@@ -20,5 +20,7 @@ l.open(info("n2"), 4000); l.look(true, 4000); l.open(info("n3"), 9000);
 eq(l.all()[1].outcome, "expired", "inaction is recorded");
 l.act("tap", { card: "a", option: "A" }, 9500);
 eq([l.all()[2].outcome, l.all()[2].pick], ["picked", "A"], "tap picks");
+const l2 = Log.create({ list: JSON.parse(JSON.stringify([{ id: "x", t0: 5, t1: null, views: [[5, 9]], events: [], outcome: "open" }])) });
+eq([l2.all()[0].outcome, l2.all()[0].t1], ["left", 9], "dangling impression closed on load");
 console.log(bad ? bad + " problems" : "log ok");
 process.exit(bad ? 1 : 0);

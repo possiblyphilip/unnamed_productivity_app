@@ -16,7 +16,7 @@
   //                           was on screen or below, and when it first came into view
   //   views                   [start, end] intervals in which the set was actually on screen
   //   events                  what the person did, in order (see EVENT_TYPES)
-  //   outcome                 picked, rejected, back, nav, expired, or open while still showing
+  //   outcome                 picked, rejected, back, nav, expired (clock moved on), left (page closed or reloaded), or open while still showing
   //   pick                    option id picked or rejected, when there was one
 
   var EVENT_TYPES = ["tap", "swipe_right", "swipe_left", "reveal", "back", "nav", "reject_reason"];
@@ -25,6 +25,13 @@
   function create(opts) {
     var o = Object.assign({ max: 1500 }, opts || {});
     var list = (o.list || []).slice();
+    // A set still open from an earlier page load was left when the page closed or reloaded.
+    list.forEach(function (r) {
+      if (r.outcome === "open") {
+        var last = r.views.length ? r.views[r.views.length - 1][1] : r.t0;
+        r.t1 = r.t1 || last; r.outcome = "left";
+      }
+    });
     var cur = null, seq = 0, viewing = false;
 
     function id(now) { seq += 1; return now.toString(36) + "-" + seq; }

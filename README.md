@@ -14,7 +14,7 @@ Open it on a phone. On iPhone: Share, then Add to Home Screen. On Android: the b
 - The left menu has Tell it something (a typed note) and Off-plan today (sick, travelling, a big day, a rough one). Turning a single card down is the swipe left.
 - The menu at the top left opens an Integrations screen with only what works now: Google Calendar, weather and location, moon, sleep hours and cycle days (set by hand), and astrology (a birthday, moon sign and season, and your sign against the moon). Its settings are kept across refreshes. Every pick also logs the astrology signals whether or not the lens is on, so they can be tested against picks later. The app never shows what it has learned, the branches, or the picks; that stays in the model.
 
-A refresh starts the day from scratch (only the Google Calendar sign-in is kept). A made-up 20-week pick history is built in, so learned chips and ordering show from the first open. Sleep is a three-way selector (5, 7 or 9 hours) and each setting is a different plan of the day.
+A refresh starts the day from scratch. Kept across a refresh: the Google Calendar sign-in, the Integrations settings and the impression log (use Export my log in the menu to save it). A made-up 20-week pick history is built in, so learned chips and ordering show from the first open. Sleep is a three-way selector (5, 7 or 9 hours) and each setting is a different plan of the day.
 
 Time is the real clock. In test mode (`#test`) every pick can move the time forward 30 minutes, and the test strip shows and sets the time. The bottom band shows the lenses that are switched on under Integrations (sleep and cycle day as you set them, moon, and the astrology rows).
 
