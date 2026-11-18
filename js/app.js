@@ -38,7 +38,7 @@
   // A made-up history is baked in, so learned chips and ordering show from the first open.
   var baked = Sim.demoHistory();
   function history() { return baked.concat(offers); }
-  var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false }, zodiac: { enabled: true, hidden: false }, sign: { enabled: false, hidden: false } }, load("cc.lenses", {}));
+  var lenses = Object.assign({ sleep: { enabled: true }, moon: { enabled: true }, cycle: { enabled: true }, zodiac: { enabled: true }, sign: { enabled: false } }, load("cc.lenses", {}));
   var profile = Object.assign({ birth: "", cals: {} }, load("cc.profile", {}));
   var notes = load("cc.notes", []);
   var test = Object.assign({ on: false, minutes: null, dow: null, live: true, energy: "normal", sleep: 7, cycleDay: 0, sleepDay: "", pause: true, auto: false }, load("cc.test", {}));
@@ -188,12 +188,12 @@
   }
 
   // Context is consolidated into a few chips. Patterns the app has learned come first. The rest are one line
-  // per lens, rotating through the day, grouped: sleep, cycle, and moon with zodiac. Lenses switched off or hidden never show.
+  // per lens, rotating through the day, grouped: sleep, cycle, and moon with zodiac. Lenses switched off never show.
   var LENS_ORDER = ["sleep", "cycle", "moon", "zodiac", "sign"];
   var LENS_GROUPS = [["sleep"], ["cycle"], ["moon", "zodiac", "sign"]];
   function lensChips(x) {
     var hidden = {}, learned = {}, out = [];
-    Object.keys(lenses).forEach(function (id) { if (lenses[id].hidden || !lenses[id].enabled) { hidden[id] = true; } });
+    Object.keys(lenses).forEach(function (id) { if (!lenses[id].enabled) { hidden[id] = true; } });
     Learner.chipsFor(history(), x.slice, x.states, hidden, 3).forEach(function (f) {
       if (f.kind === "pair") {
         out.push(f.lens.map(function (id) { return lensText(id, x.c); }).join(" · "));
@@ -469,7 +469,7 @@
         control = '<label class="small-label">Cycle day <select class="dateinput" data-test="cycleDay"><option value="0"' + (test.cycleDay ? "" : " selected") + ">Off</option>" +
           Array.apply(null, Array(28)).map(function (_, i) { return '<option value="' + (i + 1) + '"' + (test.cycleDay === i + 1 ? " selected" : "") + ">Day " + (i + 1) + "</option>"; }).join("") + "</select></label> ";
       }
-      if (on || control) { extra = '<div class="integ-extra">' + control + (on ? '<button type="button" class="quiet" data-act="lenshide" data-lens="' + id + '">' + (lenses[id].hidden ? "Show on screen" : "Hide on screen") + "</button>" : "") + "</div>"; }
+      if (control) { extra = '<div class="integ-extra">' + control + "</div>"; }
     } else {
       return "";
     }
@@ -797,7 +797,6 @@
     else if (act === "install") { if (installEvent) { installEvent.prompt(); installEvent = null; } ui.menu = false; }
     else if (act === "screen") { ui.screen = el.getAttribute("data-screen"); ui.statsFocus = null; ui.menu = false; if (ui.screen === "install") { runDiag(); } }
     else if (act === "lens") { var lid = el.getAttribute("data-lens"); lenses[lid].enabled = !lenses[lid].enabled; }
-    else if (act === "lenshide") { var hid = el.getAttribute("data-lens"); lenses[hid].hidden = !lenses[hid].hidden; }
     else if (act === "time") {
       var m = el.getAttribute("data-m");
       test.minutes = m === "now" ? null : Number(m);
