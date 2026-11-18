@@ -9,23 +9,21 @@
   function load(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 
-  // A refresh starts from scratch. Only the Google Calendar sign-in is kept.
+  // A refresh starts the day from scratch. Kept: the Google Calendar sign-in, and the settings on the Integrations screen.
+  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1 };
   try {
-    Object.keys(localStorage).forEach(function (k) { if (k.indexOf("cc.") === 0 && k !== "cc.gcal") { localStorage.removeItem(k); } });
+    Object.keys(localStorage).forEach(function (k) { if (k.indexOf("cc.") === 0 && !KEEP[k]) { localStorage.removeItem(k); } });
   } catch (e) { /* storage blocked */ }
 
+  // Only what works today. The rows tagged "manual" are set by the person, not read from a device.
   var INTEGRATIONS = [
-    ["Schedule", [["gcal", "Google Calendar"], ["outlook", "Outlook"], ["acal", "Apple Calendar"]]],
-    ["Messages", [["messages", "Messages"], ["gmail", "Gmail"], ["whatsapp", "WhatsApp"]]],
-    ["Social and inspiration", [["instagram", "Instagram"], ["pinterest", "Pinterest boards"]]],
-    ["Wearables and hardware", [["sleep", "Sleep hours"], ["fitness", "Fitness tracker"], ["oura", "Oura"], ["garmin", "Garmin"], ["whoop", "Whoop"], ["fitbit", "Fitbit"], ["applehealth", "Apple Health"], ["healthconnect", "Health Connect"], ["withings", "Withings scale"], ["eightsleep", "Eight Sleep"], ["dexcom", "Dexcom glucose"]]],
-    ["Nutrition and training", [["mfp", "MyFitnessPal"], ["cronometer", "Cronometer"], ["strava", "Strava"]]],
-    ["Cycle", [["cycle", "Cycle days"], ["flo", "Flo"], ["clue", "Clue"], ["naturalcycles", "Natural Cycles"]]],
-    ["Sky and place", [["weather", "Weather and location"], ["moon", "Moon"], ["zodiac", "Zodiac"], ["transit", "Transit"]]],
-    ["Notes and files", [["drive", "Google Drive"], ["notion", "Notion"], ["applenotes", "Apple Notes"]]],
-    ["Focus", [["screentime", "Screen Time"], ["focusmodes", "Focus modes"], ["wellbeing", "Digital Wellbeing"]]]
+    ["Schedule", [["gcal", "Google Calendar"]]],
+    ["Place and sky", [["weather", "Weather and location"], ["moon", "Moon phase"]]],
+    ["You, set by hand", [["sleep", "Sleep hours"], ["cycle", "Cycle days"]]],
+    ["Astrology", [["birthday", "Birthday"], ["zodiac", "Moon sign and season"], ["sign", "Your sign and the moon"]]]
   ];
-  var LENS_IDS = { sleep: true, moon: true, cycle: true, zodiac: true, fitness: true };
+  var LENS_IDS = { sleep: true, moon: true, cycle: true, zodiac: true, sign: true };
+  var LENS_NOTE = { sleep: "You set it each morning (5, 7 or 9 hours).", cycle: "You set the day.", moon: "Calculated.", zodiac: "Calculated.", sign: "Your Sun sign against today's moon sign." };
   var DAY_MODES = [["sick", "Sick"], ["travel", "Travelling"], ["big", "Big day"], ["rough", "Rough day"]];
   var DOWS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var STOPS = [["8:10a", 490], ["11:40a", 700], ["12:40p", 760], ["2:10p", 850], ["6:10p", 1090], ["8:30p", 1230]];
@@ -40,7 +38,8 @@
   // A made-up history is baked in, so learned chips and ordering show from the first open.
   var baked = Sim.demoHistory();
   function history() { return baked.concat(offers); }
-  var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false }, zodiac: { enabled: true, hidden: false }, fitness: { enabled: true, hidden: false } }, load("cc.lenses", {}));
+  var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false }, zodiac: { enabled: true, hidden: false }, sign: { enabled: false, hidden: false } }, load("cc.lenses", {}));
+  var profile = Object.assign({ birth: "" }, load("cc.profile", {}));
   var notes = load("cc.notes", []);
   var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true, auto: true }, load("cc.test", {}));
   test.sleep = snapSleep(test.sleep);
@@ -91,19 +90,17 @@
     if (lenses.sleep.enabled) { s.sleep = Learner.sleepState(test.sleep); }
     if (lenses.moon.enabled) { s.moon = c.moon.group; }
     if (lenses.cycle.enabled && test.cycleDay > 0) { s.cycle = Learner.cyclePhase(test.cycleDay); }
+    if (lenses.sign.enabled && hasSign()) { s.sign = Astro.relation(sunSign(profile.birth), c.moon.sign) || undefined; }
     return s;
   }
 
-  var SUN_SIGNS = [["Capricorn", 1, 19], ["Aquarius", 2, 18], ["Pisces", 3, 20], ["Aries", 4, 19], ["Taurus", 5, 20], ["Gemini", 6, 20], ["Cancer", 7, 22], ["Leo", 8, 22], ["Virgo", 9, 22], ["Libra", 10, 22], ["Scorpio", 11, 21], ["Sagittarius", 12, 21], ["Capricorn", 12, 31]];
-  function sunSign(day) {
-    var p = String(day).split("-"), mo = Number(p[1]), d = Number(p[2]);
-    for (var i = 0; i < SUN_SIGNS.length; i++) { if (mo < SUN_SIGNS[i][1] || (mo === SUN_SIGNS[i][1] && d <= SUN_SIGNS[i][2])) { return SUN_SIGNS[i][0]; } }
-    return "Capricorn";
-  }
+  var sunSign = Astro.sunSign;
+  function hasSign() { return Astro.validBirth(profile.birth); }
 
   function lensText(id, c) {
     if (id === "sleep") { return "Slept " + hm(test.sleep); }
     if (id === "moon") { return c.moon.name; }
+    if (id === "sign") { return "Moon in " + c.moon.sign + ", your " + sunSign(profile.birth) + " Sun"; }
     return cap(Learner.cyclePhase(test.cycleDay)) + " phase, day " + test.cycleDay;
   }
 
@@ -192,10 +189,9 @@
   }
 
   // Context is consolidated into a few chips. Patterns the app has learned come first. The rest are one line
-  // per lens, rotating through the day, grouped: sleep with the fitness tracker, cycle on its own, moon with
-  // zodiac. Lenses switched off or hidden never show.
-  var LENS_ORDER = ["sleep", "cycle", "moon", "zodiac", "fitness"];
-  var LENS_GROUPS = [["sleep", "fitness"], ["cycle"], ["moon", "zodiac"]];
+  // per lens, rotating through the day, grouped: sleep, cycle, and moon with zodiac. Lenses switched off or hidden never show.
+  var LENS_ORDER = ["sleep", "cycle", "moon", "zodiac", "sign"];
+  var LENS_GROUPS = [["sleep"], ["cycle"], ["moon", "zodiac", "sign"]];
   function lensChips(x) {
     var hidden = {}, learned = {}, out = [];
     Object.keys(lenses).forEach(function (id) { if (lenses[id].hidden || !lenses[id].enabled) { hidden[id] = true; } });
@@ -211,8 +207,8 @@
       sleep: "Slept " + hm(test.sleep),
       cycle: test.cycleDay > 0 ? lensText("cycle", x.c) : null,
       moon: x.c.moon.name,
-      zodiac: x.c.moon.sign ? rotate("zodiac", ["Moon in " + x.c.moon.sign, sunSign(x.c.day) + " season"]) : null,
-      fitness: rotate("fitness", fitnessLines(x))
+      zodiac: x.c.moon.sign ? rotate("zodiac", (lenses.sign.enabled && hasSign() ? [] : ["Moon in " + x.c.moon.sign]).concat([sunSign(x.c.day) + " season"])) : null,
+      sign: lenses.sign.enabled && hasSign() && x.c.moon.sign ? lensText("sign", x.c) : null
     };
     var groups = [];
     LENS_GROUPS.forEach(function (ids) {
@@ -420,24 +416,30 @@
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
   }
 
+  function todayIso() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate(); }
+
   function integrationRow(id, name) {
     var on, detail, act, attrs = "", extra = "";
     if (id === "gcal") {
       on = Ctx.calendar.connected();
-      detail = on ? "Connected." : "Not connected.";
+      detail = on ? "Connected." : (/alendar|sign-in/.test(ui.calMsg) ? ui.calMsg : "Not connected.");
       act = on ? "caldisconnect" : "calconnect";
     } else if (id === "weather") {
       on = !!live.place;
       detail = live.place ? "Using " + live.place.label + "." : "Tap to use your location.";
       act = "locate";
+    } else if (id === "birthday") {
+      return '<div class="integ"><label class="name" for="birth">Birthday</label><span class="detail">Used on this device for the astrology rows. Optional.</span>' +
+        '<input id="birth" class="dateinput" type="date" data-profile="birth" max="' + todayIso() + '" value="' + esc(profile.birth) + '"></div>';
     } else if (LENS_IDS[id]) {
-      on = lenses[id].enabled;
-      detail = on ? "On." : "Off.";
-      act = "lens";
-      attrs = ' data-lens="' + id + '"';
+      var needsBirth = id === "sign" && !hasSign();
+      on = lenses[id].enabled && !needsBirth;
+      detail = needsBirth ? "Add your birthday first." : (on ? "On. " : "Off. ") + LENS_NOTE[id];
+      act = needsBirth ? "" : "lens";
+      attrs = ' data-lens="' + id + '"' + (needsBirth ? " disabled" : "");
       if (on) { extra = '<div class="integ-extra"><button type="button" class="quiet" data-act="lenshide" data-lens="' + id + '">' + (lenses[id].hidden ? "Show on screen" : "Hide on screen") + "</button></div>"; }
     } else {
-      return '<button type="button" class="integ" disabled><span class="name">' + esc(name) + '</span><span class="detail">Planned.</span></button>';
+      return "";
     }
     var pressed = LENS_IDS[id] ? ' aria-pressed="' + (on ? "true" : "false") + '"' : "";
     return '<button type="button" class="integ" data-act="' + act + '"' + attrs + pressed + '><span class="name">' + esc(name) + '</span><span class="detail">' + esc(detail) + "</span></button>" + extra;
@@ -488,7 +490,7 @@
       return '<section class="integ-group"><h2>' + esc(g[0]) + "</h2>" + g[1].map(function (r) { return integrationRow(r[0], r[1]); }).join("") + "</section>";
     }).join("");
     return '<header class="top"><div class="row">' + hamburger() + "<h1>Integrations</h1></div>" +
-      '<p class="sub">Apps, feeds and devices. Most are planned.' + (ui.calMsg ? " " + esc(ui.calMsg) : "") + "</p></header>" +
+      '<p class="sub">What the app can use right now. Anything switched on sits in the mix when a choice is made.' + (ui.calMsg ? " " + esc(ui.calMsg) : "") + "</p></header>" +
       '<div class="screen">' + groups + "</div>";
   }
 
@@ -539,7 +541,7 @@
   var current = null;
 
   // ---- actions ----
-  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.notes", notes); save("cc.test", test); }
+  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.profile", profile); save("cc.notes", notes); save("cc.test", test); }
 
   // A clean run for testing: back to the first stop of the morning, nothing picked, no day mode, no sheet open.
   // Picks made today during testing are dropped so they do not feed the learner; made-up history and
@@ -560,7 +562,7 @@
     var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
     if (!card || !x.view.node) { return; }
     offers.push({
-      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states),
+      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: Astro.snapshot(profile.birth, x.c),
       shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
       picked: card.option, pickedActive: isActive(card), source: test.minutes !== null ? "test" : "live"
     });
@@ -626,7 +628,7 @@
     var card = r && cardsFor(x).filter(function (c) { return c.id === r.id; })[0];
     if (!card || !x.view.node) { ui.sheet = null; ui.reject = null; render(); return; }
     offers.push({
-      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states),
+      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: Astro.snapshot(profile.birth, x.c),
       shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
       picked: null, rejected: card.option, reason: reason, source: test.minutes !== null ? "test" : "live"
     });
@@ -795,7 +797,10 @@
   app.addEventListener("change", function (e) {
     var t = e.target;
     var key = t.getAttribute("data-test");
-    if (key) {
+    if (t.getAttribute("data-profile") === "birth") {
+      profile.birth = Astro.validBirth(t.value) ? t.value : "";
+      if (profile.birth) { lenses.sign.enabled = true; }
+    } else if (key) {
       var val = t.type === "checkbox" ? t.checked : t.value;
       if (key === "pause") { test.pause = !!val; }
       else if (key === "auto") { test.auto = !!val; delete S.advance; }
