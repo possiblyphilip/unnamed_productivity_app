@@ -35,6 +35,11 @@
   var precomputed = "";
   var S = load("cc.state", {});
   var offers = load("cc.offers", []).filter(function (o) { return o.source !== "sample"; });
+  // Every set of cards shown, with the order, every lens that is true, how long it was looked at, and what was done.
+  var log = Log.create({ list: load("cc.log", []) });
+  var logTimer = null;
+  function flushLog() { clearTimeout(logTimer); logTimer = null; save("cc.log", log.all()); }
+  function flushLogSoon() { if (!logTimer) { logTimer = setTimeout(flushLog, 800); } }
   // A made-up history is baked in, so learned chips and ordering show from the first open.
   var baked = Sim.demoHistory();
   function history() { return baked.concat(offers); }
@@ -100,6 +105,39 @@
     if (lenses.cycle.enabled && test.cycleDay > 0) { s.cycle = Learner.cyclePhase(test.cycleDay); }
     if (lenses.sign.enabled && hasSign()) { s.sign = Astro.relation(sunSign(profile.birth), c.moon.sign) || undefined; }
     return s;
+  }
+
+  // Everything true right now, whether or not the lens is switched on, so any of it can be tested later.
+  function lensAll(x) {
+    var c = x.c, out = { enabled: {}, energy: test.energy, dayMode: (S.dayMode && S.dayMode.mode) || null };
+    Object.keys(lenses).forEach(function (id) { out.enabled[id] = !!lenses[id].enabled; });
+    out.moon = { group: c.moon.group, name: c.moon.name, sign: c.moon.sign || null };
+    out.sleep = sleepSet() ? { hours: test.sleep, state: Learner.sleepState(test.sleep) } : null;
+    out.cycle = test.cycleDay > 0 ? { day: test.cycleDay, phase: Learner.cyclePhase(test.cycleDay) } : null;
+    var seg = (c.weather || []).filter(function (w) { return x.m >= Model.mins(w.from) && x.m < Model.mins(w.to); })[0];
+    out.weather = seg ? seg.sky : null;
+    out.daylight = x.m >= Model.mins(c.sunrise) && x.m < Model.mins(c.sunset);
+    out.nextEventIn = x.live.next ? Model.mins(x.live.next.start) - x.m : null;
+    out.astro = Astro.snapshot(profile.birth, c);
+    return out;
+  }
+
+  // Called after every render of the cards. Opens an impression when a new set appears, and says
+  // whether the set is on screen right now.
+  function syncLog() {
+    var now = Date.now();
+    var cards = ui.screen === "today" && !ui.hold && !ui.exiting && current && current.view && current.view.node;
+    if (cards) {
+      var x = current, all = cardsFor(x), onScreen = {};
+      shownCards(x).forEach(function (c) { onScreen[c.id] = true; });
+      log.open({
+        key: x.view.id, node: x.view.id, slice: x.slice, dow: dowNow(), minutes: x.m,
+        lenses: lensAll(x), ctx: ctxSnap(x), source: test.minutes !== null ? "test" : "live",
+        cards: all.map(function (c) { return { card: c.id, option: c.option, active: isActive(c), onScreen: !!onScreen[c.id] }; })
+      }, now);
+    }
+    log.look(!!cards && !ui.menu && document.visibilityState === "visible", now);
+    flushLogSoon();
   }
 
   var sunSign = Astro.sunSign;
@@ -282,10 +320,11 @@
   }
 
   // Pushing the cards up (swipe up, scroll, arrow down) brings in the rest. They stay until the screen changes.
-  function reveal() {
+  function reveal(how) {
     if (ui.hold || ui.exiting || ui.sheet || ui.screen !== "today") { return; }
     var x = compute();
     if (!hasMore(x)) { return; }
+    log.reveal(Date.now(), how || "swipe_up");
     ui.revealFor = x.view.id; ui.revealAnim = true;
     render();
     ui.revealAnim = false;
@@ -568,12 +607,13 @@
         app.innerHTML = html + menuHtml();
     ui.enterOnce = false;
     ui.titleNew = false;
+    syncLog();
     if (bundle && precomputed !== sess && ui.screen === "today") { precomputed = sess; setTimeout(precompute, 30); }
   }
   var current = null;
 
   // ---- actions ----
-  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.profile", profile); save("cc.notes", notes); save("cc.test", test); save("cc.you", { sleep: test.sleep, cycleDay: test.cycleDay, energy: test.energy, sleepDay: test.sleepDay }); }
+  function saveAll() { save("cc.state", S); save("cc.offers", offers); save("cc.lenses", lenses); save("cc.profile", profile); save("cc.notes", notes); save("cc.test", test); flushLog(); save("cc.you", { sleep: test.sleep, cycleDay: test.cycleDay, energy: test.energy, sleepDay: test.sleepDay }); }
 
   // A clean run for testing: back to the first stop of the morning, nothing picked, no day mode, no sheet open.
   // Picks made today during testing are dropped so they do not feed the learner; made-up history and
@@ -582,6 +622,7 @@
     var start = new Date();
     start.setHours(0, 0, 0, 0);
     offers = offers.filter(function (o) { return o.t < start.getTime(); });
+    log.dropSince(start.getTime());
     S = { day: todayKey() };
     test.minutes = 490;
     ui.sheet = null; ui.noteSent = false; ui.draft = "";
@@ -600,6 +641,7 @@
     var cards = shownCards(x);
     var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
     if (!card || !x.view.node) { return; }
+    log.act(how === "swipe" ? "swipe_right" : "tap", { card: card.id, option: card.option, dx: dx || 0 }, Date.now());
     offers.push({
       t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: ctxSnap(x),
       shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
@@ -642,6 +684,7 @@
     var x = compute();
     var to = x.view.node && x.view.node.children[which];
     if (!to) { return; }
+    log.act(which === "back" ? "back" : "nav", { to: which }, Date.now());
     S.cursor = { node: to, setAt: x.m };
     saveAll();
     ui.enterOnce = true;
@@ -654,6 +697,7 @@
     var x = compute();
     var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
     if (!card || (card.tags && card.tags.kind === "quiet")) { return; }
+    log.act("swipe_left", { card: card.id, option: card.option }, Date.now());
     ui.reject = { id: id, text: card.text, option: card.option, step: "ask" };
     ui.sheet = "reject";
     ui.draft = "";
@@ -666,6 +710,7 @@
     var r = ui.reject;
     var card = r && cardsFor(x).filter(function (c) { return c.id === r.id; })[0];
     if (!card || !x.view.node) { ui.sheet = null; ui.reject = null; render(); return; }
+    log.act("reject_reason", { card: card.id, option: card.option, reason: reason, hasText: !!text }, Date.now());
     offers.push({
       t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: ctxSnap(x),
       shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
@@ -726,17 +771,20 @@
     if (touchY === null) { return; }
     var dy = e.changedTouches[0].clientY - touchY;
     touchY = null;
-    if (dy < -40) { reveal(); }
+    if (dy < -40) { reveal("swipe_up"); }
   }, { passive: true });
-  app.addEventListener("wheel", function (e) { if (e.deltaY > 8 && e.target.closest(".mid")) { reveal(); } }, { passive: true });
+  app.addEventListener("wheel", function (e) { if (e.deltaY > 8 && e.target.closest(".mid")) { reveal("scroll"); } }, { passive: true });
 
   app.addEventListener("keydown", function (e) {
-    if ((e.key === "ArrowDown" || e.key === "PageDown") && cardEl(e)) { reveal(); }
+    if ((e.key === "ArrowDown" || e.key === "PageDown") && cardEl(e)) { reveal("key"); }
     var el = cardEl(e);
     if (!el || ui.hold || ui.exiting || ui.sheet) { return; }
     if (e.key === "ArrowRight") { e.preventDefault(); pick(el.getAttribute("data-id"), "swipe", 0); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); startReject(el.getAttribute("data-id")); }
   });
+
+  document.addEventListener("visibilitychange", function () { if (ui.screen === "today") { syncLog(); } if (document.visibilityState === "hidden") { flushLog(); } });
+  window.addEventListener("pagehide", flushLog);
 
   function loadLive() {
     live.moon = Ctx.moonFor(new Date());
@@ -769,7 +817,7 @@
     var act = el.getAttribute("data-act");
     if (act === "pick") { pick(el.getAttribute("data-id"), "tap"); return; }
     if (act === "nav") { goTo(el.getAttribute("data-to")); return; }
-    if (act === "reveal") { reveal(); return; }
+    if (act === "reveal") { reveal("tap"); return; }
     if (act === "rejectmore") { if (ui.reject) { ui.reject.step = "more"; render(); } return; }
     if (act === "rejectquiet") { doReject("not_feeling_it", ""); return; }
     if (act === "rejectsend") { var why = ui.draft.trim(); if (why) { doReject("more", why); } return; }
@@ -804,7 +852,7 @@
     }
     else if (act === "drawer") { ui.drawer = !ui.drawer; }
     else if (act === "resetday") { replayDay(); }
-    else if (act === "clearhistory") { offers = []; }
+    else if (act === "clearhistory") { offers = []; log.clear(); }
     else if (act === "hidetest") { test.on = false; ui.drawer = false; }
     else if (act === "locate") { loadLive(); ui.calMsg = "Asking for your location."; }
     else if (act === "calconnect") {

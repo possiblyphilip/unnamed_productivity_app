@@ -97,6 +97,24 @@ The planner works lazily. A node is created with its cards, and its children are
 
 `offer_shown`, `card_viewed` (with count and dwell), `card_picked`, `card_rejected` (with `reason`: `not_feeling_it` or `more`, and the user's words when given), `cards_revealed` (pushed up to see more), `category_back`, `offer_expired` (inaction), `app_opened`, `bundle_exhausted`, `note_sent`, `day_mode_set`, `adjustment_undone`, `branch_changed`, `lens_changed`. Each carries `node`, `cards`, `tags` as received, a context hash, a timestamp and an idempotency key.
 
+## Impression log
+
+Separate from the learner's counts and from the events above: a raw record of every set of cards put in front of the person, kept whether or not they did anything with it. `js/log.js` holds it, `app.js` feeds it, and it is stored on the device (`cc.log`, last 1,500 sets). Nothing in it is interpreted.
+
+| Field | Meaning |
+|---|---|
+| `id`, `node` | Impression id and the node the set came from |
+| `t0`, `t1` | When the set appeared and when it was left |
+| `slice`, `dow`, `minutes` | Weekday or weekend by daypart, day of week, minute of the day |
+| `lenses` | Every lens state that is true at that moment, **whether or not the lens is switched on** and whether or not it predicts anything: moon (group, name, sign), sleep (hours, state), cycle (day, phase), astrology (season, sun, relation, life path), weather, daylight, energy, day mode, minutes to the next event. `enabled` says which lenses were on |
+| `ctx` | The context snapshot kept with picks (astrology, all-day count) |
+| `cards` | Every card on the node in the planned order: `pos`, `card`, `option`, `active`, `onScreen` (on screen or waiting below) and `seenAt` (when it first came into view, so cards revealed later get a later time) |
+| `views` | `[start, end]` for each stretch in which the set was actually on screen. The count is how many times it was looked at, the sum is the dwell. Leaving the app, opening the menu or another screen ends a view and coming back starts another |
+| `events` | What was done, in order: `tap`, `swipe_right`, `swipe_left`, `reveal` (with `how`: `swipe_up`, `scroll`, `key`, `tap`), `back`, `nav`, `reject_reason` (`not_feeling_it` or `more`; the words themselves go to notes, not here) |
+| `outcome`, `pick` | `picked`, `rejected`, `back`, `nav`, `expired` (inaction) or `open` while still showing, and the option picked or turned down |
+
+A set opens when it appears and closes on the first pick, rejection, back or navigation, or when the clock moves the person to the next node. A set is not opened while the cards are hidden after a pick. "More for me" is a push up (swipe up, scroll or arrow down), recorded as `reveal`.
+
 ## Privacy split
 
 - **Device only:** names, free text, calendar titles, exact location, raw cycle dates, the full state estimate.
