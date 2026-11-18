@@ -122,29 +122,66 @@
     return d.getHours() * 60 + d.getMinutes();
   }
 
-  function loadCalendar() {
-    var token = tokenRecord();
-    if (!token) { return Promise.resolve(null); }
-    var start = new Date(); start.setHours(0, 0, 0, 0);
-    var end = new Date(); end.setHours(23, 59, 59, 999);
-    var url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
-    url.searchParams.set("timeMin", start.toISOString());
-    url.searchParams.set("timeMax", end.toISOString());
-    url.searchParams.set("singleEvents", "true");
-    url.searchParams.set("orderBy", "startTime");
-    url.searchParams.set("maxResults", "20");
+  // ---- calendars ----
+  // Each calendar has a mode: "plan" (timed events shape the day), "show" (listed as context only) or "off".
+  function defaultMode(cal) {
+    if (cal.primary) { return "plan"; }
+    if (/#holiday@|#contacts@|#weather@/.test(cal.id)) { return "off"; }
+    return "show";
+  }
+  function authed(url, token) {
     return fetch(url, { headers: { Authorization: "Bearer " + token.access_token } }).then(function (r) {
       if (r.status === 401) { disconnect(); throw new Error("expired"); }
       if (!r.ok) { throw new Error("calendar " + r.status); }
       return r.json();
-    }).then(function (data) {
-      var items = data.items || [];
-      var events = items.filter(function (e) { return e.start && e.start.dateTime && e.end && e.end.dateTime; }).map(function (e) {
-        return { start: hhmm(minutesOf(e.start.dateTime)), end: hhmm(minutesOf(e.end.dateTime)), title: e.summary || "Busy", travel_min: 0 };
+    });
+  }
+  function dayNumber(iso) { var p = iso.split("-"); return Math.round(Date.UTC(+p[0], +p[1] - 1, +p[2]) / 86400000); }
+  function todayNumber() { var d = new Date(); return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000); }
+  function declined(e) { return (e.attendees || []).some(function (a) { return a.self && a.responseStatus === "declined"; }); }
+
+  function loadCalendar(modes) {
+    var token = tokenRecord();
+    if (!token) { return Promise.resolve(null); }
+    modes = modes || {};
+    var start = new Date(); start.setHours(0, 0, 0, 0);
+    var end = new Date(); end.setHours(23, 59, 59, 999);
+    return authed("https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader&maxResults=100", token).then(function (list) {
+      var cals = (list.items || []).map(function (c) {
+        return { id: c.id, name: c.summaryOverride || c.summary || c.id, primary: !!c.primary, mode: modes[c.id] || defaultMode(c) };
       });
-      // All-day events do not block time, so they are not planned around. They are listed so you can see they were read.
-      var allDay = items.filter(function (e) { return e.start && e.start.date; }).map(function (e) { return e.summary || "All-day event"; });
-      return { events: events, allDay: allDay };
+      var failed = [];
+      return Promise.all(cals.filter(function (c) { return c.mode !== "off"; }).map(function (c) {
+        var url = new URL("https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(c.id) + "/events");
+        url.searchParams.set("timeMin", start.toISOString());
+        url.searchParams.set("timeMax", end.toISOString());
+        url.searchParams.set("singleEvents", "true");
+        url.searchParams.set("orderBy", "startTime");
+        url.searchParams.set("maxResults", "25");
+        return authed(url, token).then(function (data) { return { cal: c, items: data.items || [] }; }).catch(function (err) {
+          if (err.message === "expired") { throw err; }
+          failed.push(c.name); return { cal: c, items: [] };
+        });
+      })).then(function (results) {
+        var seen = {}, events = [], other = [], allDay = [];
+        results.forEach(function (r) {
+          r.items.forEach(function (e) {
+            if (e.status === "cancelled" || declined(e)) { return; }
+            var key = (e.iCalUID || e.id) + (e.start ? (e.start.dateTime || e.start.date) : "");
+            if (seen[key]) { return; }
+            seen[key] = true;
+            if (e.start && e.start.date) {
+              var from = dayNumber(e.start.date), to = e.end && e.end.date ? dayNumber(e.end.date) : from + 1;
+              allDay.push({ title: e.summary || "All-day event", cal: r.cal.name, day: todayNumber() - from + 1, of: Math.max(1, to - from) });
+            } else if (e.start && e.start.dateTime && e.end && e.end.dateTime) {
+              if (e.transparency === "transparent") { return; }
+              var ev = { start: hhmm(minutesOf(e.start.dateTime)), end: hhmm(minutesOf(e.end.dateTime)), title: e.summary || "Busy", travel_min: 0, cal: r.cal.name };
+              (r.cal.mode === "plan" ? events : other).push(ev);
+            }
+          });
+        });
+        return { events: events, other: other, allDay: allDay, calendars: cals, failed: failed };
+      });
     });
   }
 

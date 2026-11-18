@@ -164,3 +164,7 @@ button.chip:active { background: var(--chip-line); }
 .stat .note { margin: 6px 0 0; font-size: 0.85rem; color: var(--card-ink); opacity: 0.75; }
 
 .integ .dateinput { margin-top: 8px; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--soft); background: var(--bg, #fff); color: var(--card-ink); }
+.cal-list { margin: -2px 0 12px 12px; }
+.cal-list > .detail { margin: 0 0 6px 4px; color: var(--soft); }
+.integ.small { padding: 8px 14px; margin-bottom: 6px; }
+.integ.small .name { font-size: 0.95rem; }

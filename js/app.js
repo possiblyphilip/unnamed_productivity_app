@@ -39,7 +39,7 @@
   var baked = Sim.demoHistory();
   function history() { return baked.concat(offers); }
   var lenses = Object.assign({ sleep: { enabled: true, hidden: false }, moon: { enabled: true, hidden: false }, cycle: { enabled: true, hidden: false }, zodiac: { enabled: true, hidden: false }, sign: { enabled: false, hidden: false } }, load("cc.lenses", {}));
-  var profile = Object.assign({ birth: "" }, load("cc.profile", {}));
+  var profile = Object.assign({ birth: "", cals: {} }, load("cc.profile", {}));
   var notes = load("cc.notes", []);
   var test = Object.assign({ on: true, minutes: null, dow: null, live: false, energy: "normal", sleep: 7, cycleDay: 21, pause: true, auto: true }, load("cc.test", {}));
   test.sleep = snapSleep(test.sleep);
@@ -64,7 +64,7 @@
   var ui = { diag: null, sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null };
   var holdTimer = null;
   var exitTimer = null;
-  var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], allDay: [], calState: "", place: null, moon: Ctx.moonFor(new Date()) };
+  var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], other: [], allDay: [], cals: [], calFailed: [], calState: "", place: null, moon: Ctx.moonFor(new Date()) };
 
   // ---- time and context ----
   function todayKey() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
@@ -295,14 +295,16 @@
   // Which section of the stats screen a chip opens onto.
   function focusFor(text) {
     if (/moon|season/i.test(text)) { return "sky"; }
-    if (/rain|dry|sunset|\bin \d+ min|\bat \d/i.test(text)) { return "now"; }
+    if (/^All day:|rain|dry|sunset|\bin \d+ min|\bat \d/i.test(text)) { return "now"; }
     return "body";
   }
 
   function bottomHtml(x) {
     var ops = operational(x).slice(0, 2);
     function chip(text, cls) { return '<button type="button" class="chip' + cls + '" data-act="stats" data-focus="' + focusFor(text) + '">' + esc(text) + "</button>"; }
-    var chips = (ops.length ? [chip(ops.join(" \u00b7 "), "")] : [])
+    var days = test.live ? live.allDay.slice(0, 2).map(allDayLabel) : [];
+    var chips = (days.length ? [chip("All day: " + days.join(" \u00b7 "), "")] : [])
+      .concat(ops.length ? [chip(ops.join(" \u00b7 "), "")] : [])
       .concat(lensChips(x).map(function (t) { return chip(t, " lens"); }));
     return '<footer class="bottom">' + chips.join("") + "</footer>";
   }
@@ -418,16 +420,28 @@
 
   function todayIso() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate(); }
 
+  function allDayLabel(e) { return e.of > 1 ? e.title + " (day " + e.day + " of " + e.of + ")" : e.title; }
+  var MODE_TEXT = { plan: "Plans around its events", show: "Shown only", off: "Off" };
+  var MODE_NEXT = { plan: "show", show: "off", off: "plan" };
+  function calendarListHtml() {
+    if (!live.cals.length) { return ""; }
+    return '<div class="integ-extra cal-list"><p class="detail">Calendars. Tap one to change how it is used.</p>' + live.cals.map(function (c) {
+      return '<button type="button" class="integ small" data-act="calmode" data-cal="' + esc(c.id) + '"><span class="name">' + esc(c.name) + '</span><span class="detail">' + MODE_TEXT[c.mode] + "</span></button>";
+    }).join("") + "</div>";
+  }
+
   // What the calendar gave back today, so it is clear it is being read.
   function calSummary() {
     if (live.calState && live.calState !== "ok") { return live.calState; }
     if (live.calState !== "ok") { return "Reading today."; }
-    var t = live.calendar.length, a = live.allDay.length;
-    if (!t && !a) { return "Nothing on today."; }
+    var t = live.calendar.length, o = live.other.length, a = live.allDay.length;
+    var tail = live.calFailed.length ? " Could not read: " + live.calFailed.join(", ") + "." : "";
+    if (!t && !a && !o) { return "Nothing on today." + tail; }
     var parts = [];
-    if (t) { parts.push(t + " timed: " + live.calendar.map(function (e) { return e.title; }).join(", ")); }
-    if (a) { parts.push(a + " all-day: " + live.allDay.join(", ")); }
-    return "Today: " + parts.join("; ") + ".";
+    if (t) { parts.push(t + " planned: " + live.calendar.map(function (e) { return e.title; }).join(", ")); }
+    if (o) { parts.push(o + " shown only: " + live.other.map(function (e) { return e.title; }).join(", ")); }
+    if (a) { parts.push(a + " all-day: " + live.allDay.map(allDayLabel).join(", ")); }
+    return "Today: " + parts.join("; ") + "." + tail;
   }
 
   function integrationRow(id, name) {
@@ -436,6 +450,7 @@
       on = Ctx.calendar.connected();
       detail = on ? "Connected. " + calSummary() : (/alendar|sign-in/.test(ui.calMsg) ? ui.calMsg : "Not connected.");
       act = on ? "caldisconnect" : "calconnect";
+      if (on) { extra = calendarListHtml(); }
     } else if (id === "weather") {
       on = !!live.place;
       detail = live.place ? "Using " + live.place.label + "." : "Tap to use your location.";
@@ -568,13 +583,20 @@
     clearTimeout(holdTimer); ui.hold = false;
   }
 
+  // Everything computable for this moment, kept with each pick. All-day events are counted, not named.
+  function ctxSnap(x) {
+    var o = Astro.snapshot(profile.birth, x.c);
+    if (test.live) { o.allDay = live.allDay.length; o.multiDay = live.allDay.some(function (e) { return e.of > 1; }); }
+    return o;
+  }
+
   function pick(id, how, dx) {
     var x = compute();
     var cards = shownCards(x);
     var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
     if (!card || !x.view.node) { return; }
     offers.push({
-      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: Astro.snapshot(profile.birth, x.c),
+      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: ctxSnap(x),
       shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
       picked: card.option, pickedActive: isActive(card), source: test.minutes !== null ? "test" : "live"
     });
@@ -640,7 +662,7 @@
     var card = r && cardsFor(x).filter(function (c) { return c.id === r.id; })[0];
     if (!card || !x.view.node) { ui.sheet = null; ui.reject = null; render(); return; }
     offers.push({
-      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: Astro.snapshot(profile.birth, x.c),
+      t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: ctxSnap(x),
       shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
       picked: null, rejected: card.option, reason: reason, source: test.minutes !== null ? "test" : "live"
     });
@@ -720,8 +742,12 @@
       live.weather = w.weather; live.sunrise = w.sunrise; live.sunset = w.sunset;
       render();
     }).catch(function () { ui.calMsg = "Weather didn't answer."; render(); });
-    Ctx.calendar.load().then(function (r) {
-      live.calendar = r ? r.events : []; live.allDay = r ? r.allDay : []; live.calState = r ? "ok" : "";
+    loadCal();
+  }
+  function loadCal() {
+    Ctx.calendar.load(profile.cals).then(function (r) {
+      live.calendar = r ? r.events : []; live.other = r ? r.other : []; live.allDay = r ? r.allDay : [];
+      live.cals = r ? r.calendars : []; live.calFailed = r ? r.failed : []; live.calState = r ? "ok" : "";
       render();
     }).catch(function (err) { live.calState = "Could not read it (" + (err && err.message || "error") + ")."; render(); });
   }
@@ -785,7 +811,11 @@
       });
       return;
     }
-    else if (act === "caldisconnect") { Ctx.calendar.disconnect(); live.calendar = []; ui.calMsg = ""; }
+    else if (act === "caldisconnect") { Ctx.calendar.disconnect(); live.calendar = []; live.other = []; live.allDay = []; live.cals = []; live.calState = ""; ui.calMsg = ""; }
+    else if (act === "calmode") {
+      var cid = el.getAttribute("data-cal"), cur = live.cals.filter(function (c) { return c.id === cid; })[0];
+      if (cur) { cur.mode = MODE_NEXT[cur.mode]; profile.cals[cid] = cur.mode; live.calState = ""; loadCal(); }
+    }
     else if (act === "clearall") {
       if (!confirm("Clear picks, settings and notes stored in this browser?")) { return; }
       Object.keys(localStorage).filter(function (k) { return k.indexOf("cc.") === 0; }).forEach(function (k) { localStorage.removeItem(k); });
