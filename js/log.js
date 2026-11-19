@@ -10,6 +10,7 @@
   //
   // An impression holds:
   //   id, node, t0, t1        when the set appeared and when it was left
+//   day, load, bank         local date, page-load id (a reload starts a new one), bank in use ("built-in" or the bank id)
   //   slice, dow, minutes     weekday or weekend by daypart, day of week, minute of the day
   //   lenses                  every lens state that is true now, enabled or not, with raw values
   //   cards                   every card on the node in the order planned, with position, whether it
@@ -33,6 +34,9 @@
       }
     });
     var cur = null, seq = 0, viewing = false;
+    // One id per page load, so a screen that comes back after a reload is not mistaken for one that was ignored.
+    var load = o.load || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    function dayOf(t) { var d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 
     function id(now) { seq += 1; return now.toString(36) + "-" + seq; }
     function trim() { if (list.length > o.max) { list = list.slice(list.length - o.max); } }
@@ -44,6 +48,7 @@
       close(now, "expired");
       cur = {
         id: id(now), key: info.key, node: info.node, t0: now, t1: null,
+        day: dayOf(now), load: load, bank: info.bank || null,
         slice: info.slice, dow: info.dow, minutes: info.minutes,
         lenses: info.lenses, ctx: info.ctx, source: info.source,
         cards: info.cards.map(function (c, i) {
@@ -105,10 +110,18 @@
     function clear() { list = []; cur = null; viewing = false; }
     // Drop impressions from `since` on (a replayed day in testing).
     function dropSince(since) { list = list.filter(function (r) { return r.t0 < since; }); if (cur && cur.t0 >= since) { cur = null; viewing = false; } }
+    // How much attention a set got. Raw outcomes stay as recorded; this is a reading of them.
+    //   acted    picked, rejected, went back or navigated
+    //   looked   on screen for at least 3 seconds, then expired or left without action
+    //   glanced  barely on screen, so it says little about the options
+    function attention(r) {
+      if (r.outcome === "picked" || r.outcome === "rejected" || r.outcome === "back" || r.outcome === "nav") { return "acted"; }
+      return dwellMs(r) >= 3000 ? "looked" : "glanced";
+    }
     function viewCount(r) { return r.views.length; }
     function dwellMs(r) { return r.views.reduce(function (s, v) { return s + (v[1] - v[0]); }, 0); }
 
-    return { open: open, look: look, reveal: reveal, act: act, close: close, current: current, all: all, clear: clear, dropSince: dropSince, viewCount: viewCount, dwellMs: dwellMs };
+    return { open: open, look: look, reveal: reveal, act: act, close: close, current: current, all: all, clear: clear, dropSince: dropSince, viewCount: viewCount, dwellMs: dwellMs, attention: attention, load: function () { return load; } };
   }
 
   return { create: create, EVENT_TYPES: EVENT_TYPES };

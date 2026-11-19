@@ -139,7 +139,7 @@
       var x = current, all = cardsFor(x), onScreen = {};
       shownCards(x).forEach(function (c) { onScreen[c.id] = true; });
       log.open({
-        key: x.view.id, node: x.view.id, slice: x.slice, dow: dowNow(), minutes: x.m,
+        key: x.view.id, node: x.view.id, bank: bankName || "built-in", slice: x.slice, dow: dowNow(), minutes: x.m,
         lenses: lensAll(x), ctx: ctxSnap(x), source: test.minutes !== null ? "test" : "live",
         cards: all.map(function (c) { return { card: c.id, option: c.option, active: isActive(c), onScreen: !!onScreen[c.id] }; })
       }, now);
