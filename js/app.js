@@ -10,8 +10,9 @@
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 
   // A refresh starts the day from scratch. Kept: the Google Calendar sign-in, the settings on the Integrations
-  // screen, and the impression log (a record of what was shown and done, which must outlive a refresh).
-  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1, "cc.log": 1, "cc.mybank": 1 };
+  // screen, the impression log (a record of what was shown and done, which must outlive a refresh), and the
+  // server link (device token and upload marks, see sync.js). Anything Sync stores under cc. must be listed here.
+  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1, "cc.log": 1, "cc.mybank": 1, "cc.sync": 1, "cc.syncmark": 1, "cc.calstatus": 1 };
   try {
     Object.keys(localStorage).forEach(function (k) { if (k.indexOf("cc.") === 0 && !KEEP[k]) { localStorage.removeItem(k); } });
   } catch (e) { /* storage blocked */ }

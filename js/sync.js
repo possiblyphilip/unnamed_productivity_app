@@ -4,12 +4,15 @@
   // token on this device. After that the impression log is uploaded and the calendar comes from the server.
   // Without a token none of this runs and the app works as it always has.
   var KEY = "cc.sync", MARK = "cc.syncmark";
+  var CALKEY = "cc.calstatus";
+  // The last status the server gave, so a fresh page load (or a failed request) does not look like a sign-out.
   var cal = { status: "", last: 0 };
   var timer = null, busy = false;
 
   function load(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 
+  function setStatus(s) { cal.status = s; save(CALKEY, s); }
   function cfg() { var c = load(KEY, null); return c && c.token && c.api ? c : null; }
   function enabled() { return !!cfg(); }
 
@@ -79,15 +82,17 @@
 
   // ---- calendar ----
   function loadCalendar() {
-    return call("GET", "/v1/calendar").then(function (r) { cal.status = r.status; cal.last = r.last_sync; return r; });
+    return call("GET", "/v1/calendar").then(function (r) { setStatus(r.status); cal.last = r.last_sync; return r; });
   }
   function connectCalendar() {
     return call("POST", "/v1/auth/google/start").then(function (r) { location.assign(r.url); });
   }
   function disconnectCalendar() {
-    return call("POST", "/v1/auth/google/disconnect").then(function () { cal.status = "none"; });
+    return call("POST", "/v1/auth/google/disconnect").then(function () { setStatus("none"); });
   }
-  function profileVersion() { return call("GET", "/v1/me").then(function (r) { cal.status = r.calendar; return r.profile_version; }); }
+  function profileVersion() { return call("GET", "/v1/me").then(function (r) { setStatus(r.calendar); return r.profile_version; }); }
+
+  cal.status = load(CALKEY, "") || "";
 
   root.Sync = {
     enabled: enabled, takeSetupLink: takeSetupLink, takeCalendarResult: takeCalendarResult,
