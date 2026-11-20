@@ -236,9 +236,34 @@
     var want = {};
     (keep || []).forEach(function (id) { want[id] = true; });
     var base = list ? BUILT_IN.filter(function (o) { return want[o.id]; }) : BUILT_IN;
-    var next = base.concat(list || []);
+    var next = base.concat(list || [], ADDED);
     OPTIONS.length = 0;
     next.forEach(function (o) { OPTIONS.push(o); });
+    rebuild();
+  }
+
+  // Options the person added themselves (long press), turned into ordinary first-screen options. They appear in the
+  // parts of the day where they were used, higher the more they have been used (1.5 at best, so the broad categories still lead), and only on weekdays or only at
+  // weekends when every use of three or more was on one kind of day. list: [{ id, text, times: [epoch ms] }].
+  var ADDED = [];
+  function blockOfMinute(m) { return m < 810 ? "morning" : m < 1020 ? "afternoon" : m < 1200 ? "evening" : "night"; }
+  function setAdded(list) {
+    ADDED.forEach(function (o) { var i = OPTIONS.indexOf(o); if (i !== -1) { OPTIONS.splice(i, 1); } });
+    rebuild();
+    ADDED = (list || []).filter(function (a) { return a && a.id && a.text && a.times && a.times.length; }).map(function (a) {
+      var blocks = {}, wk = 0;
+      a.times.forEach(function (t) {
+        var d = new Date(t), m = d.getHours() * 60 + d.getMinutes();
+        blocks[blockOfMinute(m)] = true;
+        if (d.getDay() === 0 || d.getDay() === 6) { wk += 1; }
+      });
+      var slots = {}, rank = Math.max(1.5, 6.2 - 0.9 * a.times.length);
+      Object.keys(blocks).forEach(function (b) { slots[b] = { rank: rank }; });
+      var o = { id: a.id, text: a.text, label: a.text, dur: a.dur || 15, kind: "added", at: slots };
+      if (a.times.length >= 3) { if (wk === 0) { o.days = "weekday"; } else if (wk === a.times.length) { o.days = "weekend"; } }
+      return o;
+    });
+    ADDED.forEach(function (o) { if (!BY_ID[o.id]) { OPTIONS.push(o); } });
     rebuild();
   }
 
@@ -532,5 +557,5 @@
     return s.bundle;
   }
 
-  return { plan: plan, session: session, useBank: useBank, OPTIONS: OPTIONS, makeBlocks: makeBlocks, hash: hash, sleepBand: sleepBand };
+  return { plan: plan, session: session, useBank: useBank, setAdded: setAdded, OPTIONS: OPTIONS, makeBlocks: makeBlocks, hash: hash, sleepBand: sleepBand };
 });

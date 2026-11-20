@@ -170,3 +170,5 @@ button.chip:active { background: var(--chip-line); }
 .integ.small .name { font-size: 0.95rem; }
 .small-label { display: block; font-size: 0.92rem; margin: 0 0 6px 4px; }
 .small-label .dateinput { margin: 4px 0 0 6px; }
+
+.card { -webkit-touch-callout: none; }

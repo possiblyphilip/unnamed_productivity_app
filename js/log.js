@@ -18,10 +18,10 @@
   //   views                   [start, end] intervals in which the set was actually on screen
   //   events                  what the person did, in order (see EVENT_TYPES)
   //   outcome                 picked, rejected, back, nav, expired (clock moved on), left (page closed or reloaded), or open while still showing
-  //   pick                    option id picked or rejected, when there was one
+  //   pick                    option id picked or rejected, when there was one (an added option has an id of its own, "added:..."; the event keeps `card`/`from`, the card that was pressed)
 
-  var EVENT_TYPES = ["tap", "swipe_right", "swipe_left", "reveal", "back", "nav", "reject_reason"];
-  var OUTCOMES = { tap: "picked", swipe_right: "picked", back: "back", nav: "nav" };
+  var EVENT_TYPES = ["tap", "swipe_right", "swipe_left", "long_press", "long_press_bg", "now", "now_cancel", "add_cancel", "add_pick", "reveal", "back", "nav", "reject_reason"];
+  var OUTCOMES = { tap: "picked", swipe_right: "picked", add_pick: "picked", back: "back", nav: "nav" };
 
   function create(opts) {
     var o = Object.assign({ max: 1500 }, opts || {});
@@ -90,7 +90,7 @@
       if (!cur) { return; }
       var e = Object.assign({ t: now, type: type }, detail || {});
       cur.events.push(e);
-      if (type === "swipe_left") { return; }
+      if (type === "swipe_left" || type === "long_press" || type === "long_press_bg" || type === "now" || type === "now_cancel" || type === "add_cancel") { return; }
       if (type === "reject_reason") { close(now, "rejected", detail && detail.option); return; }
       if (OUTCOMES[type]) { close(now, OUTCOMES[type], detail && detail.option); }
     }

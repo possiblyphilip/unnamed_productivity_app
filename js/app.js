@@ -10,9 +10,9 @@
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 
   // A refresh starts the day from scratch. Kept: the Google Calendar sign-in, the settings on the Integrations
-  // screen, the impression log (a record of what was shown and done, which must outlive a refresh), and the
-  // server link (device token and upload marks, see sync.js). Anything Sync stores under cc. must be listed here.
-  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1, "cc.log": 1, "cc.mybank": 1, "cc.sync": 1, "cc.syncmark": 1, "cc.calstatus": 1 };
+  // screen, the impression log (a record of what was shown and done, which must outlive a refresh), the options the
+  // person added and the queue of them not yet sent, and the server link (device token and upload marks, see sync.js). Anything Sync stores under cc. must be listed here.
+  var KEEP = { "cc.gcal": 1, "cc.lenses": 1, "cc.profile": 1, "cc.you": 1, "cc.log": 1, "cc.mybank": 1, "cc.sync": 1, "cc.syncmark": 1, "cc.calstatus": 1, "cc.added": 1, "cc.addedq": 1 };
   try {
     Object.keys(localStorage).forEach(function (k) { if (k.indexOf("cc.") === 0 && !KEEP[k]) { localStorage.removeItem(k); } });
   } catch (e) { /* storage blocked */ }
@@ -48,6 +48,37 @@
   var lenses = Object.assign({ sleep: { enabled: true }, moon: { enabled: true }, cycle: { enabled: true }, zodiac: { enabled: true }, sign: { enabled: false } }, load("cc.lenses", {}));
   var profile = Object.assign({ birth: "", cals: {} }, load("cc.profile", {}));
   var notes = load("cc.notes", []);
+  // Options the person added (long press on a card, or "what I am doing now"), with every time each was used.
+  // They go to the planner as cards. The server keeps the same list so it survives a change of phone.
+  var added = load("cc.added", {});
+  function addedIdFor(text) { return "added:" + (text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "something"); }
+  function applyAdded() {
+    Planner.setAdded(Object.keys(added).map(function (k) { return added[k]; }));
+    sessions = {}; precomputed = "";
+  }
+  function rememberAdded(id, text, t) {
+    var a = added[id] = added[id] || { id: id, text: text, times: [] };
+    if (a.times.indexOf(t) === -1) { a.times.push(t); }
+    a.times = a.times.slice(-200);
+    save("cc.added", added);
+    applyAdded();
+  }
+  function mergeServerAdded() {
+    Sync.addedList().then(function (items) {
+      if (!items) { return; }
+      var changed = false;
+      items.forEach(function (it) {
+        var a = added[it.id] = added[it.id] || { id: it.id, text: it.text, times: [] };
+        (it.times || []).forEach(function (t) { if (a.times.indexOf(t) === -1) { a.times.push(t); changed = true; } });
+      });
+      if (changed) { save("cc.added", added); applyAdded(); render(); }
+    });
+  }
+  // The thing the person was doing just before now, and how many minutes ago it started, so the gaps between things can be learned.
+  function previousThing(x) {
+    var a = S.activity;
+    return a ? { prev: { option: a.option || null, label: a.label, at: a.at }, since: x.m - a.at } : { prev: null, since: null };
+  }
   var test = Object.assign({ on: false, minutes: null, dow: null, live: true, energy: "normal", sleep: 7, cycleDay: 0, sleepDay: "", pause: true, auto: false }, load("cc.test", {}));
   // What the person sets by hand on the Integrations screen is kept. Last night's sleep only counts for the day it was set.
   (function () {
@@ -74,7 +105,7 @@
   }
   applyPalette();
 
-  var ui = { diag: null, sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null };
+  var ui = { diag: null, sheet: null, menu: false, screen: "today", drawer: false, draft: "", noteSent: false, calMsg: "", hold: false, exiting: null, enterOnce: false, titleNew: false, reject: null, add: null, now: false };
   var holdTimer = null;
   var exitTimer = null;
   var live = { weather: [], sunrise: "07:00", sunset: "17:00", calendar: [], other: [], allDay: [], cals: [], calFailed: [], calState: "", place: null, moon: Ctx.moonFor(new Date()) };
@@ -315,7 +346,7 @@
           cls += ex.how === "swipe" ? " slide-right" : " keep";
           if (ex.how === "swipe" && ex.dx) { style = ' style="--x:' + Math.round(ex.dx) + 'px"'; }
         } else if (ex.goneId === c.id) { cls += " gone"; }
-        else if (ex.pickedId) { cls += " fade"; }
+        else if (ex.pickedId || ex.added) { cls += " fade"; }
         return '<div class="' + cls + '"' + style + '>' + esc(c.text) + "</div>";
       }).join("") + "</div>";
     }
@@ -405,6 +436,14 @@
             '<div class="actions"><button class="pill" data-act="rejectsend">Send</button><span class="count" id="count">' + ui.draft.length + " / 1000</span></div>"
           : '<p class="ask">Can you tell me more about that, or are you just not feeling it?</p>' +
             '<button class="row-btn" data-act="rejectmore">I can tell you more</button><button class="row-btn" data-act="rejectquiet">Just not feeling it</button>');
+    } else if (ui.sheet === "now") {
+      body = "<h2>What are you doing right now?</h2>" +
+        '<textarea id="note" maxlength="1000" placeholder="For example: messaging someone">' + esc(ui.draft) + '</textarea>' +
+        '<div class="actions"><button class="pill" data-act="nowsend">Log it</button><span class="count" id="count">' + ui.draft.length + " / 1000</span></div>";
+    } else if (ui.sheet === "add" && ui.add) {
+      body = "<h2>\u201c" + esc(ui.add.text) + "\u201d</h2>" +
+        '<p class="ask">Doing something else? Add it. This card stays as it was.</p><textarea id="note" maxlength="1000" placeholder="What are you doing?">' + esc(ui.draft) + '</textarea>' +
+        '<div class="actions"><button class="pill" data-act="addsend">Add and start</button><span class="count" id="count">' + ui.draft.length + " / 1000</span></div>";
     } else if (ui.sheet === "palette") {
       body = "<h2>Colors</h2>" + PALETTES.map(function (q) {
         return '<button type="button" class="row-btn" data-act="palette" data-id="' + q.id + '" aria-pressed="' + (q.id === palette ? "true" : "false") + '">' +
@@ -661,30 +700,39 @@
     return o;
   }
 
-  function pick(id, how, dx) {
+  function pick(id, how, dx, added) {
     var x = compute();
     var cards = shownCards(x);
     var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
     if (!card || !x.view.node) { return; }
-    log.act(how === "swipe" ? "swipe_right" : "tap", { card: card.id, option: card.option, dx: dx || 0 }, Date.now());
+    // `added` is text the person typed after a long press. It becomes an option of its own; the card they
+    // pressed stays recorded as shown and is not credited as picked.
+    var addedId = added ? addedIdFor(added) : null, before = previousThing(x);
+    if (added) {
+      log.act("add_pick", { card: card.id, from: card.option, option: addedId, text: added }, Date.now());
+      rememberAdded(addedId, added, Date.now());
+      Sync.addedSend({ id: addedId, text: added, from: card.option, t: Date.now(), via: "card", day: todayKey(), slice: x.slice, dow: new Date().getDay(), minutes: x.m, prev: before.prev, since: before.since });
+    }
+    else { log.act(how === "swipe" ? "swipe_right" : "tap", { card: card.id, option: card.option, dx: dx || 0 }, Date.now()); }
     offers.push({
       t: Date.now(), slice: x.slice, lens: Object.assign({}, x.states), ctx: ctxSnap(x),
       shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
-      picked: card.option, pickedActive: isActive(card), source: test.minutes !== null ? "test" : "live"
+      picked: added ? null : card.option, pickedActive: added ? undefined : isActive(card), added: added ? { option: addedId, text: added, from: card.option } : undefined, prev: before.prev, since: before.since, source: test.minutes !== null ? "test" : "live"
     });
     if (offers.length > 3000) { offers = offers.slice(offers.length - 3000); }
     var child = Model.childFor(x.view.node, card);
     // Opening a category is only navigation: it is not an activity and it does not move the day on.
     if (!card.opens) {
-      S.activity = { label: card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
+      S.activity = { option: added ? addedId : card.option, label: added || card.label || card.text, steps: card.steps || null, at: x.m, until: x.m + (card.duration_min || 0) };
       if (test.auto) { S.advance = 30; }
     }
     S.cursor = { node: child || x.view.id, setAt: x.m };
+    
     saveAll();
     var box = document.querySelector(".mid .stack");
     ui.boxHeight = box ? box.offsetHeight : 0;
     how = how || "tap";
-    ui.exiting = { cards: cards.filter(function (c) { return !(c.tags && c.tags.kind === "quiet"); }), pickedId: card.id, how: how, dx: dx || 0 };
+    ui.exiting = { cards: cards.filter(function (c) { return !(c.tags && c.tags.kind === "quiet"); }), pickedId: added ? null : card.id, added: !!added, how: how, dx: dx || 0 };
     ui.titleNew = !card.opens;
     clearTimeout(holdTimer);
     clearTimeout(exitTimer);
@@ -718,6 +766,43 @@
 
   // Swipe left: a kind question first. "Not feeling it" or a few words, then the planner answers with a
   // new set that leaves the option out for the rest of the day.
+  function startAdd(id) {
+    var x = compute();
+    var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
+    if (!card || card.opens || (card.tags && card.tags.kind === "quiet")) { return false; }
+    log.act("long_press", { card: card.id, option: card.option }, Date.now());
+    ui.add = { id: id, text: card.text, option: card.option };
+    ui.sheet = "add";
+    ui.draft = "";
+    render();
+    return true;
+  }
+
+  // Long press on the background: tell the app what is happening right now. Nothing on screen changes except the
+  // title; the time, and what came before and how long ago, are recorded.
+  function startNow() {
+    if (ui.screen !== "today" || ui.menu || ui.sheet || ui.hold || ui.exiting || ui.drawer || S.dayMode) { return false; }
+    log.act("long_press_bg", {}, Date.now());
+    ui.now = true; ui.sheet = "now"; ui.draft = "";
+    render();
+    return true;
+  }
+  function doNow(text) {
+    var x = compute(), cards = shownCards(x), id = addedIdFor(text), before = previousThing(x), t = Date.now();
+    log.act("now", { option: id, text: text, prev: before.prev, since: before.since }, t);
+    rememberAdded(id, text, t);
+    Sync.addedSend({ id: id, text: text, from: null, t: t, via: "now", day: todayKey(), slice: x.slice, dow: new Date().getDay(), minutes: x.m, prev: before.prev, since: before.since });
+    offers.push({
+      t: t, slice: x.slice, lens: Object.assign({}, x.states), ctx: ctxSnap(x),
+      shown: cards.map(function (c) { return { o: c.option, a: isActive(c) }; }),
+      picked: null, now: { option: id, text: text }, prev: before.prev, since: before.since, source: test.minutes !== null ? "test" : "live"
+    });
+    S.activity = { option: id, label: text, steps: null, at: x.m, until: x.m + 15 };
+    ui.sheet = null; ui.now = false; ui.draft = "";
+    saveAll();
+    render();
+  }
+
   function startReject(id) {
     var x = compute();
     var card = cardsFor(x).filter(function (c) { return c.id === id; })[0];
@@ -754,18 +839,26 @@
   }
 
   // Swipe right (or tap) chooses. Swipe left rejects. Arrow keys do the same on a focused card.
-  var drag = null, swallowClick = false;
+  var drag = null, swallowClick = false, pressTimer = null;
   function cardEl(e) { return e.target && e.target.closest ? e.target.closest('button.card[data-act="pick"]') : null; }
 
   app.addEventListener("pointerdown", function (e) {
     var el = cardEl(e);
     if (!el || ui.hold || ui.exiting || ui.sheet || (e.pointerType === "mouse" && e.button !== 0)) { return; }
     drag = { el: el, id: el.getAttribute("data-id"), x: e.clientX, y: e.clientY, dx: 0, moved: false, pid: e.pointerId };
+    clearTimeout(pressTimer);
+    var pd = drag;
+    pressTimer = setTimeout(function () {
+      if (drag !== pd || pd.moved) { return; }
+      drag = null;
+      if (startAdd(pd.id)) { swallowClick = true; }
+    }, 500);
   });
   app.addEventListener("pointermove", function (e) {
     if (!drag || e.pointerId !== drag.pid) { return; }
     var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.moved) {
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) { clearTimeout(pressTimer); }
       if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; }
       if (Math.abs(dx) < 8) { return; }
       drag.moved = true;
@@ -778,6 +871,8 @@
     drag.el.classList.toggle("left", dx < -50);
   });
   function endDrag(e, cancelled) {
+    clearTimeout(pressTimer);
+    if (swallowClick && !drag) { setTimeout(function () { swallowClick = false; }, 60); }
     if (!drag || e.pointerId !== drag.pid) { return; }
     var d = drag;
     drag = null;
@@ -790,6 +885,20 @@
   }
   app.addEventListener("pointerup", function (e) { endDrag(e, false); });
   app.addEventListener("pointercancel", function (e) { endDrag(e, true); });
+  // Long press anywhere that is not a card or a control.
+  var bgTimer = null, bgDown = null;
+  function offCard(e) { return e.target && e.target.closest && !e.target.closest(".card, .testbar, .drawer, .chip, .bottom, .top, .sheet, .scrim, [data-act], textarea, input, select"); }
+  app.addEventListener("pointerdown", function (e) {
+    clearTimeout(bgTimer);
+    if (!offCard(e) || ui.screen !== "today" || ui.sheet || ui.menu || (e.pointerType === "mouse" && e.button !== 0)) { return; }
+    bgDown = { x: e.clientX, y: e.clientY, pid: e.pointerId };
+    bgTimer = setTimeout(function () { bgDown = null; if (startNow()) { swallowClick = true; } }, 500);
+  });
+  app.addEventListener("pointermove", function (e) { if (bgDown && e.pointerId === bgDown.pid && (Math.abs(e.clientX - bgDown.x) > 8 || Math.abs(e.clientY - bgDown.y) > 8)) { clearTimeout(bgTimer); bgDown = null; } });
+  function bgEnd() { clearTimeout(bgTimer); bgDown = null; if (swallowClick) { setTimeout(function () { swallowClick = false; }, 60); } }
+  app.addEventListener("pointerup", bgEnd);
+  app.addEventListener("pointercancel", bgEnd);
+  app.addEventListener("contextmenu", function (e) { if (cardEl(e) || offCard(e)) { e.preventDefault(); } });
   var touchY = null;
   app.addEventListener("touchstart", function (e) { touchY = e.touches.length === 1 && e.target.closest(".mid") ? e.touches[0].clientY : null; }, { passive: true });
   app.addEventListener("touchend", function (e) {
@@ -847,7 +956,19 @@
     if (act === "rejectmore") { if (ui.reject) { ui.reject.step = "more"; render(); } return; }
     if (act === "rejectquiet") { doReject("not_feeling_it", ""); return; }
     if (act === "rejectsend") { var why = ui.draft.trim(); if (why) { doReject("more", why); } return; }
-    if (act === "closesheet") { ui.sheet = null; ui.noteSent = false; ui.reject = null; }
+    if (act === "addsend") {
+      var what = ui.draft.trim(), ed = ui.add;
+      if (!what || !ed) { return; }
+      ui.sheet = null; ui.add = null; ui.draft = "";
+      pick(ed.id, "tap", 0, what);
+      return;
+    }
+    if (act === "nowsend") { var doing = ui.draft.trim(); if (doing) { doNow(doing); } return; }
+    if (act === "closesheet") {
+      if (ui.sheet === "now") { log.act("now_cancel", {}, Date.now()); ui.now = false; }
+      if (ui.sheet === "add" && ui.add) { log.act("add_cancel", { card: ui.add.id, option: ui.add.option }, Date.now()); }
+      ui.sheet = null; ui.noteSent = false; ui.reject = null; ui.add = null;
+    }
     else if (act === "notesheet") { ui.sheet = "note"; ui.noteSent = false; ui.menu = false; ui.screen = "today"; }
     else if (act === "palettesheet") { ui.sheet = "palette"; ui.menu = false; ui.screen = "today"; }
     else if (act === "palette") { palette = paletteById(el.getAttribute("data-id")).id; save("cc.palette", palette); applyPalette(); }
@@ -959,12 +1080,13 @@
   });
 
   // ---- start ----
+  Sync.addedFlush(); applyAdded(); mergeServerAdded();
   if (Sync.takeSetupLink()) { test.live = true; }
   var calResult = Sync.takeCalendarResult();
   if (calResult === "connected") { test.live = true; } else if (calResult) { ui.calMsg = "Calendar connection stopped."; }
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") { save("cc.log", log.all()); Sync.uploadLog(log.all(), true); }
-    else if (Sync.enabled()) { loadCal(); }
+    else if (Sync.enabled()) { loadCal(); Sync.addedFlush(); mergeServerAdded(); }
   });
   var tokenMsg = Ctx.calendar.takeRedirectToken();
   if (tokenMsg === "") { test.live = true; } else if (tokenMsg) { ui.calMsg = tokenMsg; }

@@ -80,6 +80,28 @@
     timer = setTimeout(function () { timer = null; uploadLog(list()); }, 5000);
   }
 
+  // ---- added options ----
+  // What the person typed after a long press. Queued on the device until the server has it, so a dropped
+  // connection loses nothing; each use is sent with its time and the server counts it once.
+  var AQ = "cc.addedq";
+  function addedFlush(keepalive) {
+    var q = load(AQ, []);
+    if (!enabled() || !q.length || addedBusy) { return Promise.resolve(0); }
+    addedBusy = true;
+    var batch = q.slice(0, 50);
+    return call("POST", "/v1/added", { items: batch }, keepalive).then(function () {
+      var now = load(AQ, []).filter(function (a) { return !batch.some(function (b) { return b.id === a.id && b.t === a.t; }); });
+      save(AQ, now); addedBusy = false; return batch.length;
+    }, function () { addedBusy = false; return 0; });
+  }
+  var addedBusy = false;
+  // The server's list of added options, with the times each was used.
+  function addedList() { return call("GET", "/v1/added").then(function (r) { return r.items || []; }, function () { return null; }); }
+  function addedSend(item) {
+    var q = load(AQ, []); q.push(item); save(AQ, q.slice(-200));
+    return addedFlush();
+  }
+
   // ---- calendar ----
   function loadCalendar() {
     return call("GET", "/v1/calendar").then(function (r) { setStatus(r.status); cal.last = r.last_sync; return r; });
@@ -96,7 +118,7 @@
 
   root.Sync = {
     enabled: enabled, takeSetupLink: takeSetupLink, takeCalendarResult: takeCalendarResult,
-    uploadLog: uploadLog, uploadSoon: uploadSoon,
+    uploadLog: uploadLog, uploadSoon: uploadSoon, addedSend: addedSend, addedFlush: addedFlush, addedList: addedList,
     calendar: { load: loadCalendar, connect: connectCalendar, disconnect: disconnectCalendar, status: function () { return cal.status; } },
     profileVersion: profileVersion
   };

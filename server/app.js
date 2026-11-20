@@ -53,6 +53,42 @@ function makeHandler(deps) {
       const [a, b, cal] = await Promise.all([store.get("USER#" + user, "CALDAY#" + today), store.get("USER#" + user, "CALDAY#" + tomorrow), store.get("USER#" + user, "CAL#google")]);
       return json(200, { status: cal ? cal.status : "none", last_sync: cal ? cal.last_sync || null : null, days: { [today]: cal && a ? a.events : [], [tomorrow]: cal && b ? b.events : [] } });
     },
+    // Options the person added themselves (long press on a card). One item per option, counted each time it is used,
+    // so the planner can offer it as a card later. Kept apart from the impression log, which stays raw.
+    "POST /v1/added": async (user, body) => {
+      const list = body && body.items;
+      if (!Array.isArray(list) || list.length > 50) { return json(400, { error: "items must be an array of at most 50" }); }
+      for (const a of list) {
+        if (!a || typeof a.id !== "string" || !/^added:[a-z0-9-]{1,40}$/.test(a.id) || typeof a.text !== "string" || !a.text.trim() || a.text.length > 1000 || typeof a.t !== "number") {
+          return json(400, { error: "each item needs id (added:...), text and numeric t" });
+        }
+      }
+      for (const a of list) {
+        const old = await store.get("USER#" + user, "ADDED#" + a.id);
+        const uses = old && old.uses || [];
+        // The same use sent twice (a retry) is counted once.
+        if (uses.indexOf(a.t) === -1) { uses.push(a.t); }
+        await store.put({
+          pk: "USER#" + user, sk: "ADDED#" + a.id, id: a.id, text: old ? old.text : a.text.trim(),
+          from: a.from || (old && old.from) || null, slice: a.slice || null, dow: a.dow == null ? null : a.dow, minutes: a.minutes == null ? null : a.minutes,
+          uses: uses.slice(-200), first: old ? old.first : a.t, last: Math.max(a.t, old ? old.last : 0)
+        });
+        // One row per use, in time order: when it happened, how (a card long press, or "what I am doing now"), and
+        // what came just before and how many minutes earlier, so gaps between things can be learned later.
+        await store.put({
+          pk: "USER#" + user, sk: "USE#" + pad(a.t) + "#" + a.id,
+          id: a.id, text: a.text.trim(), t: a.t, via: a.via === "now" ? "now" : "card", from: a.from || null,
+          day: a.day || null, slice: a.slice || null, dow: a.dow == null ? null : a.dow, minutes: a.minutes == null ? null : a.minutes,
+          prev: a.prev && typeof a.prev === "object" ? { option: a.prev.option || null, label: String(a.prev.label || "").slice(0, 200), at: a.prev.at == null ? null : a.prev.at } : null,
+          since: typeof a.since === "number" ? a.since : null
+        });
+      }
+      return json(200, { stored: list.length });
+    },
+    "GET /v1/added": async (user) => {
+      const rows = await store.query("USER#" + user, "ADDED#");
+      return json(200, { items: rows.map((r) => ({ id: r.id, text: r.text, from: r.from, uses: r.uses.length, times: r.uses, last: r.last })) });
+    },
     "POST /v1/log": async (user, body) => {
       const list = body && body.impressions;
       if (!Array.isArray(list) || list.length > MAX_IMPRESSIONS) { return json(400, { error: "impressions must be an array of at most " + MAX_IMPRESSIONS }); }

@@ -11,7 +11,8 @@ function memStore() {
     async get(pk, sk) { return m.get(k(pk, sk)) || null; },
     async put(i) { m.set(k(i.pk, i.sk), i); },
     async del(pk, sk) { m.delete(k(pk, sk)); },
-    async putMany(items) { items.forEach((i) => m.set(k(i.pk, i.sk), i)); }
+    async putMany(items) { items.forEach((i) => m.set(k(i.pk, i.sk), i)); },
+    async query(pk, prefix) { return [...m.values()].filter((i) => i.pk === pk && i.sk.startsWith(prefix)); }
   };
 }
 const TOKEN = "t".repeat(43);
@@ -59,4 +60,27 @@ test("unknown route and bad json", async () => {
   assert.equal((await call(h, "GET", "/v1/nope")).statusCode, 404);
   const r = await h({ requestContext: { http: { method: "POST", path: "/v1/log" } }, headers: { authorization: "Bearer " + TOKEN }, body: "{" });
   assert.equal(r.statusCode, 400);
+});
+test("added options are stored once per use and listed", async () => {
+  const { h } = await setup();
+  const a = { id: "added:messaging-someone", text: "Messaging someone", from: "opt1", t: 1700000000000, slice: "weekday-morning", dow: 1, minutes: 500 };
+  assert.equal((await call(h, "POST", "/v1/added", { items: [a] })).statusCode, 200);
+  await call(h, "POST", "/v1/added", { items: [a] }); // retry of the same use
+  await call(h, "POST", "/v1/added", { items: [{ ...a, t: a.t + 1000, text: "ignored rename" }] });
+  const r = JSON.parse((await call(h, "GET", "/v1/added")).body);
+  assert.deepEqual(r.items, [{ id: a.id, text: "Messaging someone", from: "opt1", uses: 2, times: [a.t, a.t + 1000], last: a.t + 1000 }]);
+});
+test("POST /v1/added validates input", async () => {
+  const { h } = await setup();
+  assert.equal((await call(h, "POST", "/v1/added", { items: [{ id: "opt1", text: "x", t: 1 }] })).statusCode, 400);
+  assert.equal((await call(h, "POST", "/v1/added", { items: [{ id: "added:x", text: " ", t: 1 }] })).statusCode, 400);
+  assert.equal((await call(h, "POST", "/v1/added", { items: "x" })).statusCode, 400);
+});
+test("every use is kept as its own row with what came before it", async () => {
+  const { s, h } = await setup();
+  const a = { id: "added:reading", text: "Reading", t: 1700000100000, via: "now", day: "2026-11-19", minutes: 600, prev: { option: "m_walk", label: "Walking", at: 570 }, since: 30 };
+  await call(h, "POST", "/v1/added", { items: [a, a] });
+  const rows = [...s.m.values()].filter((i) => i.sk.startsWith("USE#"));
+  assert.equal(rows.length, 1);
+  assert.deepEqual([rows[0].via, rows[0].since, rows[0].prev.option], ["now", 30, "m_walk"]);
 });
