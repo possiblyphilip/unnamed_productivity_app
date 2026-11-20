@@ -140,7 +140,24 @@
   function todayNumber() { var d = new Date(); return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000); }
   function declined(e) { return (e.attendees || []).some(function (a) { return a.self && a.responseStatus === "declined"; }); }
 
+  // From the server: the primary calendar for today, already cached there. Same shape as loadCalendar returns.
+  function loadServerCalendar() {
+    return Sync.calendar.load().then(function (r) {
+      var keys = Object.keys(r.days).sort(), today = keys[0], events = [], allDay = [];
+      (r.days[today] || []).forEach(function (e) {
+        if (e.allDay) {
+          var from = dayNumber(e.start), to = e.end ? dayNumber(e.end) : from + 1;
+          allDay.push({ title: e.title || "All-day event", cal: "Calendar", day: todayNumber() - from + 1, of: Math.max(1, to - from) });
+        } else {
+          events.push({ start: hhmm(minutesOf(e.start)), end: hhmm(minutesOf(e.end)), title: e.title || "Busy", travel_min: 0, cal: "Calendar" });
+        }
+      });
+      return { events: events, other: [], allDay: allDay, calendars: [], failed: [], status: r.status };
+    });
+  }
+
   function loadCalendar(modes) {
+    if (Sync.enabled()) { return loadServerCalendar(); }
     var token = tokenRecord();
     if (!token) { return Promise.resolve(null); }
     modes = modes || {};
@@ -186,6 +203,7 @@
   }
 
   function connect(done) {
+    if (Sync.enabled()) { Sync.calendar.connect().catch(function () { done("Calendar sign-in could not start. Is the server reachable?"); }); return; }
     if (!allowedOrigin()) { done("Calendar sign-in needs https or localhost."); return; }
     if (phoneSignIn()) {
       var params = new URLSearchParams({ client_id: CLIENT_ID, redirect_uri: redirectUri(), response_type: "token", scope: SCOPE, include_granted_scopes: "true", prompt: "select_account" });
@@ -205,11 +223,12 @@
   }
 
   function disconnect() {
+    if (Sync.enabled()) { return Sync.calendar.disconnect().catch(function () { /* shown as connected until it succeeds */ }); }
     try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
   }
 
   root.Ctx = {
     moonFor: moonFor, locate: locate, loadWeather: loadWeather, FALLBACK: FALLBACK,
-    calendar: { connected: function () { return !!tokenRecord(); }, connect: connect, load: loadCalendar, disconnect: disconnect, takeRedirectToken: takeRedirectToken }
+    calendar: { connected: function () { return Sync.enabled() ? Sync.calendar.status() === "ok" : !!tokenRecord(); }, connect: connect, load: loadCalendar, disconnect: disconnect, takeRedirectToken: takeRedirectToken }
   };
 })(window);

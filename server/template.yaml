@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Unconscious productivity app server (step 1 - skeleton)
+
+Parameters:
+  AllowedOrigin:
+    Type: String
+    Description: Origin of the app (CORS), e.g. https://you.github.io . Use * only while testing.
+    Default: https://possiblyphilip.github.io
+  AppUrl:
+    Type: String
+    Description: Where the callback sends the browser back to.
+    Default: https://possiblyphilip.github.io/unnamed_productivity_app/
+  MaxConcurrency:
+    Type: Number
+    Description: Reserved concurrency cap (0 = no cap). New accounts often cannot reserve any; leave 0 if the deploy complains.
+    Default: 0
+
+Conditions:
+  CapConcurrency: !Not [!Equals [!Ref MaxConcurrency, 0]]
+
+Resources:
+  Table:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: uc-data
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  Key:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Encrypts Google refresh tokens (uc-server)
+      EnableKeyRotation: true
+  KeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/uc-tokens
+      TargetKeyId: !Ref Key
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/uc-server
+      RetentionInDays: 14
+
+  Function:
+    Type: AWS::Serverless::Function
+    DependsOn: LogGroup
+    Properties:
+      FunctionName: uc-server
+      CodeUri: .
+      Handler: index.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 15
+      ReservedConcurrentExecutions: !If [CapConcurrency, !Ref MaxConcurrency, !Ref "AWS::NoValue"]
+      Environment:
+        Variables:
+          TABLE: !Ref Table
+          KMS_KEY: !GetAtt Key.Arn
+          APP_URL: !Ref AppUrl
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query, dynamodb:BatchWriteItem, dynamodb:DeleteItem, dynamodb:Scan]
+              Resource: !GetAtt Table.Arn
+            - Effect: Allow
+              Action: [kms:Encrypt, kms:Decrypt]
+              Resource: !GetAtt Key.Arn
+            - Effect: Allow
+              Action: ssm:GetParameters
+              Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/uc/google-*"
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins: [!Ref AllowedOrigin]
+          AllowMethods: [GET, POST, PUT]
+          AllowHeaders: [authorization, content-type]
+          MaxAge: 600
+
+  UrlInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Function
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition: { StringEquals: { "aws:SourceAccount": !Ref "AWS::AccountId" } }
+      Policies:
+        - PolicyName: invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt Function.Arn
+
+  PollSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: uc-calendar-poll
+      ScheduleExpression: rate(15 minutes)
+      FlexibleTimeWindow: { Mode: "OFF" }
+      Target:
+        Arn: !GetAtt Function.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"task":"poll"}'
+        RetryPolicy: { MaximumRetryAttempts: 0 }
+
+Outputs:
+  ApiUrl:
+    Value: !GetAtt FunctionUrl.FunctionUrl
+  TableName:
+    Value: !Ref Table

@@ -39,7 +39,7 @@
   // Every set of cards shown, with the order, every lens that is true, how long it was looked at, and what was done.
   var log = Log.create({ list: load("cc.log", []) });
   var logTimer = null;
-  function flushLog() { clearTimeout(logTimer); logTimer = null; save("cc.log", log.all()); }
+  function flushLog() { clearTimeout(logTimer); logTimer = null; save("cc.log", log.all()); Sync.uploadSoon(log.all); }
   function flushLogSoon() { if (!logTimer) { logTimer = setTimeout(flushLog, 800); } }
   // A made-up history is baked in, so learned chips and ordering show from the first open.
   var baked = Sim.demoHistory();
@@ -825,6 +825,7 @@
     Ctx.calendar.load(profile.cals).then(function (r) {
       live.calendar = r ? r.events : []; live.other = r ? r.other : []; live.allDay = r ? r.allDay : [];
       live.cals = r ? r.calendars : []; live.calFailed = r ? r.failed : []; live.calState = r ? "ok" : "";
+      if (r && r.status === "needs_reconnect") { ui.calMsg = "Calendar sign-in needs renewing. Tap Connect."; }
       render();
     }).catch(function (err) { live.calState = "Could not read it (" + (err && err.message || "error") + ")."; render(); });
   }
@@ -890,7 +891,7 @@
       });
       return;
     }
-    else if (act === "caldisconnect") { Ctx.calendar.disconnect(); live.calendar = []; live.other = []; live.allDay = []; live.cals = []; live.calState = ""; ui.calMsg = ""; }
+    else if (act === "caldisconnect") { Promise.resolve(Ctx.calendar.disconnect()).then(function () { render(); }); live.calendar = []; live.other = []; live.allDay = []; live.cals = []; live.calState = ""; ui.calMsg = ""; }
     else if (act === "calmode") {
       var cid = el.getAttribute("data-cal"), cur = live.cals.filter(function (c) { return c.id === cid; })[0];
       if (cur) { cur.mode = MODE_NEXT[cur.mode]; profile.cals[cid] = cur.mode; live.calState = ""; loadCal(); }
@@ -957,6 +958,13 @@
   });
 
   // ---- start ----
+  if (Sync.takeSetupLink()) { test.live = true; }
+  var calResult = Sync.takeCalendarResult();
+  if (calResult === "connected") { test.live = true; } else if (calResult) { ui.calMsg = "Calendar connection stopped."; }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") { save("cc.log", log.all()); Sync.uploadLog(log.all(), true); }
+    else if (Sync.enabled()) { loadCal(); }
+  });
   var tokenMsg = Ctx.calendar.takeRedirectToken();
   if (tokenMsg === "") { test.live = true; } else if (tokenMsg) { ui.calMsg = tokenMsg; }
   if (location.hash === "#clean") { test.on = false; }
