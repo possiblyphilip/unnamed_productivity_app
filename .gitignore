@@ -5,3 +5,6 @@ day_guide_intake*.json
 intake_interview_transcript.txt
 private/
 unconscious-log-*.json
+
+# Personal transcripts and profile docs (root-level only; prompts/*.txt stay tracked)
+/*.txt
