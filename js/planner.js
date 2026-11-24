@@ -392,6 +392,26 @@
     return adj;
   }
 
+  // Rank shift from what the person has actually picked, turned down and passed over (js/taste.js), passed in as
+  // opts.learned. Without it the authored order stands. Fillers keep their place at the end. Options seen
+  // fewer than a few times get a bonus on a seeded dice roll, and every option moves a little from day to day,
+  // so the same top few do not return in the same order forever. All of it is a function of the day, so a day
+  // plans the same way every time.
+  function learnedShift(o, block, ctx, opts) {
+    var L = opts.learned;
+    if (!L || o.filler) { return 0; }
+    var mid = (block.s + block.e) / 2;
+    var slice = dayType(ctx) + "-" + (mid < 720 ? "morning" : mid < 1020 ? "afternoon" : "evening");
+    var any = L.any || {}, tbl = (L.slices && L.slices[slice]) || any;
+    var adj = tbl[o.id] != null ? tbl[o.id] : (any[o.id] || 0);
+    var fresh = Math.max(0, 1 - ((L.seen && L.seen[o.id]) || 0) / (L.seenFull || 3));
+    var roll = (hash(ctx.day + "|" + block.type + "|" + o.id) % 100) / 100;
+    var wobble = ((hash(ctx.day + "|j|" + o.id) % 100) / 100 - 0.5) * 2 * (L.jitter != null ? L.jitter : 0.4);
+    adj += (L.mood && L.mood[o.id]) || 0;
+    adj += (L.lens && L.lens[slice] && L.lens[slice][o.id]) || 0;
+    return adj - (L.exploreMax != null ? L.exploreMax : 1.5) * fresh * roll + wobble;
+  }
+
   // Everything that can be offered on a screen, best first. Only options at the level of the open
   // category are considered, and a category is offered only if something under it can be.
   function pool(block, facts, opts, ctx) {
@@ -422,7 +442,7 @@
         inside["did_" + o.id] = true;
         if (!pool(block, inside, opts, ctx).length) { return; }
       }
-      out.push({ o: o, rank: slot.rank + (cap < 0 && o.gentle ? -20 : 0) + (cap > 0 && o.demanding ? -2 : 0) + leaning(o, ctx, phase, low) });
+      out.push({ o: o, rank: slot.rank + (cap < 0 && o.gentle ? -20 : 0) + (cap > 0 && o.demanding ? -2 : 0) + leaning(o, ctx, phase, low) + learnedShift(o, block, ctx, opts) });
     });
     out.sort(function (a, b) { return a.rank - b.rank; });
     return out.map(function (x) { return x.o; });

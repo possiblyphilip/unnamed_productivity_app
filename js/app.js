@@ -167,6 +167,7 @@
   function syncLog() {
     var now = Date.now();
     var cards = ui.screen === "today" && !ui.hold && !ui.exiting && current && current.view && current.view.node;
+    shownKey = cards ? current.view.id : null;
     if (cards) {
       var x = current, all = cardsFor(x), onScreen = {};
       shownCards(x).forEach(function (c) { onScreen[c.id] = true; });
@@ -194,8 +195,45 @@
   // between them is instant, and the new plan restores the node the user was on.
   function planFor(c, sleep) {
     var sig = [c.day, test.live ? 1 : 0, test.energy, sleep, live.weather.length, c.calendar.map(function (e) { return e.start + e.end; }).join(), live.sunrise, live.sunset].join("|");
-    if (!sessions[sig]) { sessions[sig] = Planner.session(c, { energy: test.energy, sleep: sleep }); }
-    return sessions[sig];
+    latest[sig] = { c: c, sleep: sleep };
+    if (!sessions[sig]) {
+      sessions[sig] = Staging.create({
+        first: function () { return makeSession(latest[sig].c, latest[sig].sleep, learnedFor(latest[sig].c)); },
+        // Stand-in for the server: plan again with everything the log now says, then plan two levels ahead of
+        // where the person is. Run later, not now, so the screen they are going to is never held up by it.
+        build: function (rev, done) {
+          var lz = learnedFor(latest[sig].c);
+          setTimeout(function () { var s = makeSession(latest[sig].c, latest[sig].sleep, lz); warm(s); done(s); }, replanDelay);
+        },
+        ready: function () { render(); }
+      });
+    }
+    return sessions[sig].get(learnedFor(c).rev, canSwap());
+  }
+
+  var latest = {}, replanDelay = 0, shownKey = null;
+  function makeSession(c, sleep, l) { return Planner.session(Object.assign({}, c, l.counts), { energy: test.energy, sleep: sleep, learned: l.taste }); }
+  // Plan the node the person is on and the two levels below it.
+  function warm(s) {
+    var key = S.cursor && S.cursor.node && s.restore(S.cursor.node);
+    s.expand(key || s.bundle.root, 2);
+  }
+  // A new plan may only replace the old one while no set of cards is on screen (see js/staging.js).
+  function canSwap() { return !(shownKey && S.cursor && S.cursor.node === shownKey); }
+
+  // What the person has taken up, turned down and passed over (js/taste.js), read from the impression log, with
+  // the lens states that are true now. It is read again whenever a set closes with a pick, a turn-down, back or
+  // navigation, or a lens changes. The result is a new revision; planFor stages a new plan for it.
+  var learnedMemo = null;
+  function learnedFor(c) {
+    var n = 0, states = lensStates(c || ctxNow());
+    log.all().forEach(function (r) { if (r.outcome === "picked" || r.outcome === "rejected" || r.outcome === "back" || r.outcome === "nav") { n += 1; } });
+    var rev = n + "|" + JSON.stringify(states);
+    if (!learnedMemo || learnedMemo.rev !== rev) {
+      var now = Date.now();
+      learnedMemo = { rev: rev, taste: Taste.build(log.all(), Planner.OPTIONS, now, { states: states }), counts: Taste.counts(log.all(), now) };
+    }
+    return learnedMemo;
   }
 
   function precompute() {
@@ -1103,7 +1141,7 @@
   function applyBank(b) {
     // How long things really take comes from what the person has done, once there is enough of it (js/durations.js).
     Planner.useBank(b ? Durations.adjust(b.options, log.all()) : undefined, b ? b.keep : undefined);
-    sessions = {}; precomputed = "";
+    sessions = {}; precomputed = ""; learnedMemo = null;
     recurring = (b && b.recurring) || [];
     bankName = b ? b.id : "";
     var key = b ? b.id : "built-in";
