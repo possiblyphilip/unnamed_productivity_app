@@ -23,6 +23,12 @@ function dynamo(table) {
     async bumpVersion(pk) {
       await doc.send(new UpdateCommand({ TableName: table, Key: { pk, sk: "PROFILE" }, UpdateExpression: "ADD profile_version :one", ExpressionAttributeValues: { ":one": 1 } }));
     },
+    // Sets some fields on an existing item without rewriting the rest, so a poll that bumped profile_version meanwhile is not undone.
+    async update(pk, sk, fields) {
+      const names = {}, values = {}, sets = [];
+      Object.keys(fields).forEach((k, i) => { names["#f" + i] = k; values[":v" + i] = fields[k]; sets.push("#f" + i + " = :v" + i); });
+      await doc.send(new UpdateCommand({ TableName: table, Key: { pk, sk }, UpdateExpression: "SET " + sets.join(", "), ExpressionAttributeNames: names, ExpressionAttributeValues: values }));
+    },
     async scanCalendars() {
       const out = []; let key;
       do {

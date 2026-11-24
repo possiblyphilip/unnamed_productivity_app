@@ -496,7 +496,7 @@
       '<button type="button" class="item" data-act="daysheet">Off-plan today</button>' +
       '<button type="button" class="item" data-act="exportlog">Export my log</button>' +
       '<button type="button" class="item" data-act="bankpick">Load my option bank</button>' +
-      (load("cc.mybank", null) ? '<button type="button" class="item" data-act="removebank">Remove my option bank</button>' : "") +
+      (load("cc.mybank", null) && !Sync.enabled() ? '<button type="button" class="item" data-act="removebank">Remove my option bank</button>' : "") +
       (installEvent ? '<button type="button" class="item" data-act="install">Install app</button>' : "") +
       (fullscreenOk() ? '<button type="button" class="item" data-act="fullscreen">' + (document.fullscreenElement ? "Exit full screen" : "Full screen") + "</button>" : "") +
       '<button type="button" class="foot" data-act="clearall">Clear data on this device</button></nav>';
@@ -1055,6 +1055,10 @@
         applyBank(b);
         ui.menu = false; ui.screen = "today"; ui.enterOnce = true;
         render();
+        if (Sync.enabled()) {
+          Sync.bankPut(b).then(function (r) { window.alert("Option bank saved to your account (version " + r.version + ")."); },
+            function () { window.alert("Option bank loaded on this device, but your account did not take it. It will be sent the next time the app opens with a connection."); });
+        }
       }).catch(function () { window.alert("That file is not an option bank. Choose the bank file made by tools/convert-intake.js (unconscious-bank.json)."); });
     });
   }
@@ -1086,7 +1090,7 @@
   if (calResult === "connected") { test.live = true; } else if (calResult) { ui.calMsg = "Calendar connection stopped."; }
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") { save("cc.log", log.all()); Sync.uploadLog(log.all(), true); }
-    else if (Sync.enabled()) { loadCal(); Sync.addedFlush(); mergeServerAdded(); }
+    else if (Sync.enabled()) { loadCal(); Sync.addedFlush(); mergeServerAdded(); refreshBank(); }
   });
   var tokenMsg = Ctx.calendar.takeRedirectToken();
   if (tokenMsg === "") { test.live = true; } else if (tokenMsg) { ui.calMsg = tokenMsg; }
@@ -1107,12 +1111,36 @@
   function validBank(b) {
     return !!(b && Array.isArray(b.options) && b.options.length && b.options.every(function (o) { return o && o.id && o.text && o.label; }));
   }
-  function loadBank() {
+  function localBank() {
     var mine = load("cc.mybank", null);
     if (validBank(mine)) { applyBank(mine); return Promise.resolve(); }
     var give = new Promise(function (res) { setTimeout(res, 2000, null); });
     var got = fetch("private/bank.json", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
     return Promise.race([got, give]).then(function (b) { if (validBank(b)) { applyBank(b); } });
+  }
+  // With an account the server's bank is the bank: take it, keep a copy on this device, and use the copy when the
+  // server cannot be reached. A bank loaded from a file that never reached the server goes up first. If the server
+  // has none yet, this device's bank is sent.
+  function loadBank() {
+    if (!Sync.enabled()) { return localBank(); }
+    var mine = load("cc.mybank", null);
+    var wait = new Promise(function (res) { setTimeout(res, 4000, "timeout"); });
+    var step = Sync.bankPending() && validBank(mine) ? Sync.bankPut(mine).then(function () { return null; }) : Promise.race([Sync.bankGet(), wait]);
+    return step.then(function (r) {
+      if (r && r !== "timeout" && r.bank && validBank(r.bank)) { save("cc.mybank", r.bank); Sync.bankSaved(r.version); applyBank(r.bank); return; }
+      if (r && r.none && validBank(mine)) { Sync.bankPut(mine).catch(function () { /* retried next load */ }); }
+      return localBank();
+    }).catch(function () { return localBank(); });
+  }
+  // When the app comes back to the front, take a newer bank if the server has one.
+  function refreshBank() {
+    if (!Sync.enabled() || Sync.bankPending()) { return; }
+    Sync.bankServerVersion().then(function (v) {
+      if (!v || v === Sync.bankVersion()) { return; }
+      return Sync.bankGet().then(function (r) {
+        if (r && r.bank && validBank(r.bank)) { save("cc.mybank", r.bank); Sync.bankSaved(r.version); applyBank(r.bank); render(); }
+      });
+    }).catch(function () { /* offline: keep the copy on this device */ });
   }
   loadBank().then(function () {
     if (test.live) { loadLive(); }

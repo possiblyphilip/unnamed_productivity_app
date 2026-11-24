@@ -3,7 +3,12 @@ You will be given the transcript of an intake interview for a day-guide app. Tur
 RULES
 1. Use only what the person said. Quote or closely paraphrase their words. Do not add activities, goals or facts they did not mention, and do not pad the list with generic suggestions.
 2. Unknown means null, never a placeholder. Do not use 0, "", or an empty list to mean "not stated". An empty list means "the person said there are none".
-3. An estimate is allowed only for duration_min, blocks and days, and only when the transcript clearly implies it. List every estimated field in the option's "estimated" array so a person can review it. Otherwise leave it null.
+3. An estimate is allowed only for duration_min, blocks and days, and only when the transcript clearly implies it. List every estimated field in the option's "estimated" array so a person can review it. Otherwise leave it null. Never invent a duration: a missing duration stays null and goes in "gaps".
+3a. Durations: duration_min is the typical time start to finish. duration_basis says where it came from: "last_actual" (they said how long it took last time), "estimate" (their guess), or null. duration_range holds the shortest and longest they gave, else null. lead_min and wrap_min are preparation or travel before and cleanup after, only if stated. short_version is the least that would still count, with its own minutes, only if stated. Where they gave both an expected and an actual time for the same thing, use the actual one for duration_min and keep the expected one in "expected_min".
+3b. cadence is how often they want or do it, as per_week or per_month, with min_gap_days if stated. smallest_piece is the smallest useful step they named for a goal or option. stakes holds a due date and the kind of person depending on it (a role, never a name), only if stated.
+3c. low_energy says what they want on a low-energy day for that option: "offer" (suggest it), "optional" (allowed but never scheduled), or "skip". energy marks a version meant for "low", "normal" or "high" energy, and variant_of is the id of the option it is a version of.
+3d. Cycle and health: record only what the person said, in their own words and phases. If they described how phases differ, fill "profile.cycle". If they declined, set "profile.cycle" to null and add "cycle" to "profile.skipped". phase_fit on an option uses only phase names the person used, with one of "scheduled", "optional", "offer" or "avoid" each. Do not fill phases they did not describe, and do not add general facts about what a phase does.
+3e. Habits they want to stop or reduce go in "profile.habits", not "options". Each lists the triggers, the replacement options by id, and the situations that are hardest. A replacement is an ordinary option and gets habit_replaces with the habit's id.
 4. Things the person says they no longer do, or have no time for, go in "dormant_interests", not "options". Events with a date or season (races, trips, appointments) go in "profile.events", not "options". A one-time wish with no frequency also goes in "events".
 5. Anything the person declined or skipped goes in "profile.skipped". Do not guess an answer for it.
 6. Where two statements disagree, use the later one and add a note to "gaps".
@@ -32,6 +37,23 @@ SCHEMA
     "check_in_note": "",
     "lenses_allowed": null, "lenses_refused": null,
     "dormant_interests": [{ "what": "", "note": "" }],
+    "cycle": {
+      "shared": true,
+      "length_days": { "min": null, "max": null },
+      "bleed_days": { "min": null, "max": null },
+      "last_start": "YYYY-MM-DD|null",
+      "phases": [
+        {
+          "name": "the person's own word for the phase",
+          "feels_like": { "energy": null, "focus": null, "mood": null, "appetite": null, "sleep": null, "social": null },
+          "scheduled": [], "optional": [], "never_offer": [],
+          "eating": null, "gentle": null, "duration_effect": "longer|shorter|same|null"
+        }
+      ]
+    },
+    "habits": [{ "id": "h_1", "what": "", "direction": "quit|reduce", "triggers": [], "hardest": [], "replacement_ids": [] }],
+    "activation": { "helps": [], "burst_pattern": null },
+    "capture": { "input": "voice|text|null", "triage_time": "text|null" },
     "skipped": []
   },
   "options": [
@@ -40,7 +62,17 @@ SCHEMA
       "text": "", "label": "",
       "kind": "routine|variation|wild|checklist|info|quiet",
       "goal": "g_1|null",
-      "duration_min": null,
+      "duration_min": null, "duration_basis": "last_actual|estimate|null",
+      "duration_range": { "min": null, "max": null }, "expected_min": null,
+      "lead_min": null, "wrap_min": null,
+      "short_version": { "text": null, "duration_min": null },
+      "cadence": { "per_week": null, "per_month": null, "min_gap_days": null },
+      "smallest_piece": null,
+      "stakes": { "due": null, "depends_on_role": null },
+      "low_energy": "offer|optional|skip|null",
+      "energy": "low|normal|high|null", "variant_of": null,
+      "phase_fit": { "phase name": "scheduled|optional|offer|avoid" },
+      "habit_replaces": null,
       "days": "weekday|weekend|any|null",
       "blocks": { "morning": 1 },
       "needs": [], "gives": [], "skip_if": [],

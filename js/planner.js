@@ -338,6 +338,60 @@
     return found;
   }
 
+  // ---- time, cadence and phase rules for a person's own options ----
+  // Minutes already used in this block by what was picked, counting cleanup.
+  function usedMinutes(facts) {
+    var t = 0;
+    Object.keys(facts).forEach(function (k) {
+      if (k.indexOf("did_") !== 0) { return; }
+      var d = BY_ID[k.slice(4)];
+      if (d && d.dur) { t += d.dur + (d.wrap_min || 0); }
+    });
+    return t;
+  }
+
+  // Does the option, with its preparation and cleanup, fit in what is left of the block? A shorter version that
+  // fits also counts. An option with no known duration is not checked (it is never guessed), and neither is
+  // a block that is the event itself.
+  function fitsTime(o, block, facts) {
+    if (block.type === "during_event" || !o.dur) { return true; }
+    var left = block.e - block.s - usedMinutes(facts);
+    var around = (o.lead_min || 0) + (o.wrap_min || 0);
+    if (o.dur + around <= left) { return true; }
+    var sv = o.short_version;
+    return !!(sv && sv.duration_min && sv.duration_min + around <= left);
+  }
+
+  // How often the person wants it. ctx.weekCounts (times done this week) and ctx.daysSince (days since last time)
+  // are filled by whoever knows the log; without them this does nothing.
+  function cadenceOk(o, ctx) {
+    var c = o.cadence;
+    if (!c) { return true; }
+    var n = ctx.weekCounts && ctx.weekCounts[o.id], g = ctx.daysSince && ctx.daysSince[o.id];
+    if (c.per_week && typeof n === "number" && n >= c.per_week) { return false; }
+    if (c.min_gap_days && typeof g === "number" && g < c.min_gap_days) { return false; }
+    return true;
+  }
+
+  // The option's rule for the person's current phase, if they described one. ctx.phase is the phase in their own
+  // words, set by whoever places today in the cycle. Without it, or without a rule for it, there is no effect.
+  function phaseRule(o, ctx) {
+    if (!o.phase_fit || !ctx.phase) { return null; }
+    var want = String(ctx.phase).toLowerCase(), hit = null;
+    Object.keys(o.phase_fit).forEach(function (k) { if (k.toLowerCase() === want) { hit = o.phase_fit[k]; } });
+    return hit;
+  }
+
+  // Rank shift (lower is earlier) from the phase rule, the low-energy rule and the weekly target.
+  function leaning(o, ctx, phase, low) {
+    var adj = 0;
+    if (phase === "scheduled") { adj -= 2; } else if (phase === "offer") { adj -= 1; } else if (phase === "optional") { adj += 3; }
+    if (low === "offer") { adj -= 2; } else if (low === "optional") { adj += 3; }
+    var n = ctx.weekCounts && ctx.weekCounts[o.id];
+    if (o.cadence && o.cadence.per_week && typeof n === "number" && n < o.cadence.per_week) { adj -= 1; }
+    return adj;
+  }
+
   // Everything that can be offered on a screen, best first. Only options at the level of the open
   // category are considered, and a category is offered only if something under it can be.
   function pool(block, facts, opts, ctx) {
@@ -359,13 +413,16 @@
       if (o.daylight && !lightOk(ctx, block)) { return; }
       if (o.chance && hash(ctx.day + "|" + block.type + "|" + o.id) % 100 >= Math.round(o.chance * 100)) { return; }
       if (cap < 0 ? o.demanding : o.onlyLow) { return; }
+      if (!fitsTime(o, block, facts) || !cadenceOk(o, ctx)) { return; }
+      var phase = phaseRule(o, ctx), low = cap < 0 ? o.low_energy : null;
+      if (phase === "avoid" || low === "skip") { return; }
       if (o.opens) {
         var inside = Object.assign({}, facts);
         inside["in_" + o.opens] = true;
         inside["did_" + o.id] = true;
         if (!pool(block, inside, opts, ctx).length) { return; }
       }
-      out.push({ o: o, rank: slot.rank + (cap < 0 && o.gentle ? -20 : 0) + (cap > 0 && o.demanding ? -2 : 0) });
+      out.push({ o: o, rank: slot.rank + (cap < 0 && o.gentle ? -20 : 0) + (cap > 0 && o.demanding ? -2 : 0) + leaning(o, ctx, phase, low) });
     });
     out.sort(function (a, b) { return a.rank - b.rank; });
     return out.map(function (x) { return x.o; });
@@ -453,6 +510,7 @@
       if (cards[o.id]) { return; }
       cards[o.id] = {
         id: o.id, option: o.id, text: o.text, label: o.label, duration_min: o.dur || 0, steps: o.steps || null, opens: !!o.opens,
+        duration_known: !!o.dur || !!o.opens, short_version: o.short_version || null,
         tags: { horizon: o.horizon || "short", goal: o.goal || null, kind: o.kind || "routine", novel: o.kind === "wild" },
         signal: o.signal || {}
       };

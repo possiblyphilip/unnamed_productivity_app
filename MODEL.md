@@ -44,6 +44,8 @@ Working draft. The server plans a day as a tree of offers (a bundle). The web ap
 | `label` | Short name used in the top band after a pick ("Coffee by the window") |
 | `duration_min` | How long the activity takes. The top band reads "Now: <label>, until <time>" for that long, then "Last selection: <label>" |
 | `tags` | `horizon` (short, medium, long), `goal`, `kind` (routine, variation, wild, checklist, info, quiet, flirty), `novel` |
+| `duration_known` | `false` when the person has not said how long it takes. `duration_min` is then 0 and nothing is guessed. The UI should show it as unknown |
+| `short_version` | Optional `{ text, duration_min }`: the least that would still count. Offered when the full version does not fit the time left |
 | `signal` | Weights toward the state estimate, for example `{"energy": 1, "social": -1}` |
 | `why` | Optional. Hidden unless the user asks |
 
@@ -79,6 +81,17 @@ The planner works lazily. A node is created with its cards, and its children are
 ## Option bank (server side, copied locally for fallback)
 
 `id`, `text`, `label`, `kind`, `goal`, `horizon`, `duration_min`, `signal`, per-block `rank` and `needs`, `gives`, `skipIf`, weather and daylight conditions, energy flags, `status` (active, paused, retired), `paused_until`, `why`.
+
+Rules the planner reads from an option (all optional, and each does nothing without its input):
+
+| Field | Effect |
+|---|---|
+| `dur`, `lead_min`, `wrap_min` | The option is offered only if duration plus preparation and cleanup fit what is left of the block after what was already picked in it. `short_version` fits instead if the full one does not. An unknown `dur` is not checked. Not applied to the block that is the event itself |
+| `cadence { per_week, min_gap_days }` | Dropped once `per_week` is met or inside the minimum gap, and ranked higher while below target. Needs `ctx.weekCounts` and `ctx.daysSince` (option id to number), filled from the log |
+| `low_energy` | On a low-energy day: `skip` drops it, `offer` ranks it higher, `optional` ranks it lower (permitted, never pushed) |
+| `phase_fit { phase: rule }` | With `ctx.phase` set to the person's own phase word: `avoid` drops it, `scheduled` and `offer` rank it higher, `optional` lower. Setting `ctx.phase` means placing today in the person's cycle from their stored cycle shape and dates (SERVER.md, `CYCLE`) and mapping that to their own phase names. That mapping is not built yet |
+
+Fields carried on the option but not read yet: `duration_range`, `duration_basis`, `expected_min`, `smallest_piece`, `stakes`, `energy`, `variant_of`, `habit_replaces`.
 
 ## Local state
 
@@ -120,7 +133,9 @@ A set opens when it appears and closes on the first pick, rejection, back or nav
 
 ## Privacy split
 
-- **Device only:** names, free text, calendar titles, exact location, raw cycle dates, the full state estimate.
+- **Device only (single-device mode):** everything below, for a person who has no server account.
+- **With a server account** the server also holds names, free text, calendar titles, the person's cycle dates and cycle shape, and their own phase rules (see SERVER.md, Privacy). Cycle data is opt-in, encrypted with a KMS key, never logged, and deletable. A person can switch it to "keep on this phone only", and the server then gets derived phase bands only and cannot plan ahead by phase.
+- **Always device only:** exact location, birth data, the full state estimate.
 - **May go to the server:** pseudonymous id, derived bands (phase band, energy band, free minutes), card and option ids, outcomes, timestamps.
 
 ## Screen
@@ -145,7 +160,7 @@ A lens is a signal the user connects or turns on: moon, horoscope, cycle, Garmin
 |---|---|
 | `enabled` | Permission to use the data. Sets a small starting prior |
 | `hidden` | Use it in planning but never show its chips (for a screen others might see) |
-| `settings` | Lens-specific. Birth data and raw cycle dates stay on the device. The server gets derived states such as `{ "moon": "waxing crescent" }` |
+| `settings` | Lens-specific. Birth data stays on the device. Cycle dates and shape go to the server only if the person opted in. Otherwise the server gets derived states such as `{ "moon": "waxing crescent" }` |
 
 ### Learned relevance
 

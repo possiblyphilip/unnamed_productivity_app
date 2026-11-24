@@ -26,7 +26,7 @@ const children = {};
 list.forEach(function (o) { if (o.parent) { (children[o.parent] = children[o.parent] || []).push(o); } });
 const pid = function (id) { return "p_" + id; };
 
-const report = { categories_from_children: [], facts_not_enforced: {}, defaults: [], dropped: [] };
+const report = { categories_from_children: [], facts_not_enforced: {}, defaults: [], dropped: [], unknown_duration: [], carried_not_enforced: {} };
 
 function descendants(o) {
   let out = [];
@@ -71,9 +71,21 @@ const out = list.map(function (o) {
   if (o.gentle) { x.signal.overwhelm = -1; }
   if (o.goal === "g_1" || o.goal === "g_2") { x.signal.social = 1; }
   if (!isCat) {
-    x.dur = o.duration_min || 30;
-    if (!o.duration_min) { report.defaults.push(x.id + " " + o.label + ": no duration, set to 30"); }
+    // A missing duration stays unknown. It is never guessed: the report lists it so the next interview asks.
+    if (o.duration_min) { x.dur = o.duration_min; }
+    else { x.dur = null; x.dur_unknown = true; report.unknown_duration.push(x.id + " " + o.label); }
   }
+  // Fields the planner does not use yet. They are kept on the option so the bank is complete and the planner can
+  // start reading them later, and the report lists what is carried but not enforced.
+  const CARRIED = ["duration_basis", "duration_range", "expected_min", "lead_min", "wrap_min", "short_version", "cadence",
+    "smallest_piece", "stakes", "low_energy", "energy", "variant_of", "phase_fit", "habit_replaces"];
+  CARRIED.forEach(function (k) {
+    const v = o[k];
+    if (v === undefined || v === null) { return; }
+    if (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).some(function (kk) { return v[kk] !== null && v[kk] !== undefined; })) { return; }
+    x[k] = v;
+    (report.carried_not_enforced[k] = report.carried_not_enforced[k] || []).push(x.id);
+  });
   if (o.days && o.days !== "any") { x.days = o.days; }
   x.at = blocksOf(o);
   if (!Object.keys(x.at).length) { report.dropped.push(x.id + " " + o.label + ": no block, never offered"); }
@@ -110,6 +122,14 @@ const bank = {
   recurring: recurring,
   report: report
 };
+// Profile parts the planner will read later: cycle rules (phase names are the person's own), habits to change,
+// what gets things done, and how they capture. Absent or null parts are left out.
+const prof = intake.profile || {};
+const profile = {};
+["cycle", "habits", "activation", "capture"].forEach(function (k) {
+  if (prof[k] !== undefined && prof[k] !== null) { profile[k] = prof[k]; }
+});
+if (Object.keys(profile).length) { bank.profile = profile; }
 const dir = path.join(__dirname, "..", "private");
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, "bank.json"), JSON.stringify(bank, null, 1));

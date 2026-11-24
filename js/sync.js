@@ -114,12 +114,35 @@
   }
   function profileVersion() { return call("GET", "/v1/me").then(function (r) { setStatus(r.calendar); return r.profile_version; }); }
 
+  // ---- option bank ----
+  // The bank lives on the server once there is an account. This device keeps a copy (cc.mybank) so the app
+  // works offline, and remembers which server version the copy is (cc.bankver). A bank loaded from a file while
+  // the server could not be reached is marked pending and sent the next time.
+  var BANKVER = "cc.bankver", BANKPEND = "cc.bankpending";
+  // Resolves { version, bank }, or { none: true } when the server has no bank yet. Rejects on any other failure.
+  function bankGet() {
+    return call("GET", "/v1/bank").then(function (r) { return { version: r.version, bank: r.bank }; }, function (e) {
+      if (e.status === 404) { return { none: true }; }
+      throw e;
+    });
+  }
+  function bankPut(bank) {
+    return call("PUT", "/v1/bank", { bank: bank }).then(function (r) {
+      save(BANKVER, r.version); save(BANKPEND, false); return r;
+    }, function (e) { save(BANKPEND, true); throw e; });
+  }
+  function bankSaved(version) { save(BANKVER, version); save(BANKPEND, false); }
+  function bankPending() { return !!load(BANKPEND, false); }
+  function bankVersion() { return load(BANKVER, 0); }
+  function bankServerVersion() { return call("GET", "/v1/me").then(function (r) { return r.bank_version || 0; }); }
+
   cal.status = load(CALKEY, "") || "";
 
   root.Sync = {
     enabled: enabled, takeSetupLink: takeSetupLink, takeCalendarResult: takeCalendarResult,
     uploadLog: uploadLog, uploadSoon: uploadSoon, addedSend: addedSend, addedFlush: addedFlush, addedList: addedList,
     calendar: { load: loadCalendar, connect: connectCalendar, disconnect: disconnectCalendar, status: function () { return cal.status; } },
-    profileVersion: profileVersion
+    profileVersion: profileVersion,
+    bankGet: bankGet, bankPut: bankPut, bankSaved: bankSaved, bankPending: bankPending, bankVersion: bankVersion, bankServerVersion: bankServerVersion
   };
 })(window);

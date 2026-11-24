@@ -5,7 +5,48 @@ const MAX_BODY = 1024 * 1024;       // Function URL allows 6 MB; nothing here ne
 const MAX_IMPRESSIONS = 200;        // per POST /log
 const MAX_IMPRESSION_BYTES = 100 * 1024; // DynamoDB items cap at 400 KB
 
+const MAX_BANK_BYTES = 350 * 1024;  // items cap at 400 KB; past this the bank moves to S3
+const BANKS_KEPT = 10;              // older versions are pruned
+
 const hash = (token) => crypto.createHash("sha256").update(token).digest("hex");
+const bankSk = (v) => "BANK#" + String(v).padStart(8, "0");
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validateBank(b) {
+  if (!b || typeof b !== "object" || Array.isArray(b)) { return "bank must be an object"; }
+  if (!Array.isArray(b.options) || b.options.length > 2000) { return "bank.options must be an array of at most 2000"; }
+  for (const o of b.options) {
+    if (!o || typeof o.id !== "string" || o.id.length > 64 || typeof o.text !== "string") { return "each option needs a string id and text"; }
+  }
+  if (b.keep !== undefined && !Array.isArray(b.keep)) { return "bank.keep must be an array"; }
+  if (b.recurring !== undefined && !Array.isArray(b.recurring)) { return "bank.recurring must be an array"; }
+  return null;
+}
+
+// The cycle shape and dates are the most precise health data in a bank. They are taken out of it and stored
+// encrypted on their own (the CYCLE item). The person's own phase rules stay in the bank. A person who declined
+// (profile.cycle.shared false) has no cycle data kept at all.
+function splitCycle(bank) {
+  const out = JSON.parse(JSON.stringify(bank));
+  const p = out.profile;
+  if (!p || p.cycle === undefined || p.cycle === null) { return { bank: out, shape: null }; }
+  const c = p.cycle;
+  if (c.shared === false) { delete p.cycle; return { bank: out, shape: null }; }
+  const shape = { length_days: c.length_days || null, bleed_days: c.bleed_days || null, last_start: c.last_start || null };
+  delete c.length_days; delete c.bleed_days; delete c.last_start;
+  return { bank: out, shape: shape.length_days || shape.bleed_days || shape.last_start ? shape : null };
+}
+
+function validateShape(s) {
+  if (!s || typeof s !== "object") { return "body must be an object"; }
+  if (s.last_start != null && (typeof s.last_start !== "string" || !DATE.test(s.last_start))) { return "last_start must be YYYY-MM-DD"; }
+  for (const k of ["length_days", "bleed_days"]) {
+    const r = s[k];
+    if (r == null) { continue; }
+    if (typeof r !== "object" || [r.min, r.max].some((x) => x != null && (typeof x !== "number" || x < 1 || x > 100))) { return k + " must be { min, max } in days"; }
+  }
+  return null;
+}
 const json = (status, body) => ({ statusCode: status, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 const pad = (n) => String(Math.max(0, Math.floor(n))).padStart(13, "0");
 
@@ -34,6 +75,79 @@ function makeHandler(deps) {
         user: { id: user, name: p.name }, profile_version: p.profile_version || 0,
         bank_version: p.bank_version || null, calendar: cal ? cal.status : "none"
       });
+    },
+    // The option bank, one version per upload. The previous version is kept so it can be switched back.
+    "PUT /v1/bank": async (user, body) => {
+      const err = validateBank(body && body.bank);
+      if (err) { return json(400, { error: err }); }
+      if (JSON.stringify(body.bank).length > MAX_BANK_BYTES) { return json(413, { error: "bank is too large" }); }
+      const { bank, shape } = splitCycle(body.bank);
+      const shapeErr = shape && validateShape(shape);
+      if (shapeErr) { return json(400, { error: "profile.cycle: " + shapeErr }); }
+      const pk = "USER#" + user;
+      const p = await store.get(pk, "PROFILE");
+      if (!p) { return json(404, { error: "no such user" }); }
+      if (shape) {
+        if (!deps.kms) { return json(500, { error: "server error" }); }
+        await store.put({ pk, sk: "CYCLE", data: await deps.kms.encrypt(JSON.stringify(shape), { user, item: "cycle" }), updated: now() });
+      }
+      const v = (p.bank_version || 0) + 1;
+      await store.put({ pk, sk: bankSk(v), version: v, created: now(), bank });
+      await store.update(pk, "PROFILE", { bank_version: v });
+      await store.bumpVersion(pk);
+      const old = (await store.query(pk, "BANK#")).map((r) => r.version).sort((a, b) => a - b);
+      for (const ov of old.slice(0, Math.max(0, old.length - BANKS_KEPT))) { await store.del(pk, bankSk(ov)); }
+      return json(200, { version: v, options: bank.options.length, cycle_stored: !!shape });
+    },
+    "GET /v1/bank": async (user, body, event) => {
+      const pk = "USER#" + user;
+      const p = await store.get(pk, "PROFILE");
+      const want = Number((event.queryStringParameters || {}).version) || (p && p.bank_version);
+      if (!want) { return json(404, { error: "no bank" }); }
+      const row = await store.get(pk, bankSk(want));
+      if (!row) { return json(404, { error: "no such version" }); }
+      return json(200, { version: row.version, active: want === (p && p.bank_version), bank: row.bank });
+    },
+    "GET /v1/bank/versions": async (user) => {
+      const pk = "USER#" + user;
+      const p = await store.get(pk, "PROFILE");
+      const rows = (await store.query(pk, "BANK#")).sort((a, b) => a.version - b.version);
+      return json(200, { active: (p && p.bank_version) || null, versions: rows.map((r) => ({ version: r.version, created: r.created, options: r.bank.options.length })) });
+    },
+    "POST /v1/bank/activate": async (user, body) => {
+      const pk = "USER#" + user, v = body && Number(body.version);
+      if (!v || !(await store.get(pk, bankSk(v)))) { return json(404, { error: "no such version" }); }
+      await store.update(pk, "PROFILE", { bank_version: v });
+      await store.bumpVersion(pk);
+      return json(200, { active: v });
+    },
+    // Cycle shape and dates. Encrypted with the KMS key, never logged, deletable. Without this item the server
+    // cannot place a future day in the cycle and the phone sends derived phase bands only.
+    "GET /v1/cycle": async (user) => {
+      const row = await store.get("USER#" + user, "CYCLE");
+      if (!row) { return json(200, { stored: false }); }
+      return json(200, { stored: true, updated: row.updated, shape: JSON.parse(await deps.kms.decrypt(row.data, { user, item: "cycle" })) });
+    },
+    "PUT /v1/cycle": async (user, body) => {
+      const err = validateShape(body);
+      if (err) { return json(400, { error: err }); }
+      const pk = "USER#" + user;
+      const old = await store.get(pk, "CYCLE");
+      const prev = old ? JSON.parse(await deps.kms.decrypt(old.data, { user, item: "cycle" })) : {};
+      const shape = { length_days: body.length_days || prev.length_days || null, bleed_days: body.bleed_days || prev.bleed_days || null, last_start: body.last_start || prev.last_start || null };
+      await store.put({ pk, sk: "CYCLE", data: await deps.kms.encrypt(JSON.stringify(shape), { user, item: "cycle" }), updated: now() });
+      await store.bumpVersion(pk);
+      return json(200, { stored: true });
+    },
+    // Removes the dates and shape, and the phase rules from every stored bank version.
+    "POST /v1/cycle/delete": async (user) => {
+      const pk = "USER#" + user;
+      await store.del(pk, "CYCLE");
+      for (const r of await store.query(pk, "BANK#")) {
+        if (r.bank && r.bank.profile && r.bank.profile.cycle !== undefined) { delete r.bank.profile.cycle; await store.put(r); }
+      }
+      await store.bumpVersion(pk);
+      return json(200, { deleted: true });
     },
     "POST /v1/auth/google/start": async (user, body, event) => {
       const state = rand();
