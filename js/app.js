@@ -1101,7 +1101,8 @@
   // only) or, when running from a local server, from private/bank.json. Neither is ever published. Without
   // one the built-in sample bank is used. A different bank starts the day again from the top.
   function applyBank(b) {
-    Planner.useBank(b ? b.options : undefined, b ? b.keep : undefined);
+    // How long things really take comes from what the person has done, once there is enough of it (js/durations.js).
+    Planner.useBank(b ? Durations.adjust(b.options, log.all()) : undefined, b ? b.keep : undefined);
     sessions = {}; precomputed = "";
     recurring = (b && b.recurring) || [];
     bankName = b ? b.id : "";
